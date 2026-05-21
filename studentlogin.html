@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+
+<html class="light" lang="ko"><head><link as="style" crossorigin="" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet"/>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>HITL 프롬프트 빌더 - 프롬프트 만들기 챗봇</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Quicksand:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            overflow-x: hidden;
+        }
+        .headline-font {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        .blob-bg {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(77, 224, 130, 0.15) 0%, rgba(248, 249, 255, 0) 70%);
+            filter: blur(40px);
+            z-index: -1;
+            animation: float 20s infinite alternate;
+        }
+        @keyframes float {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(100px, 50px); }
+        }
+        .input-focus-ring:focus-within {
+            box-shadow: 0 0 0 4px rgba(0, 109, 54, 0.1);
+        }
+        .seed-button {
+            box-shadow: 0 4px 0 0 #005227;
+            transition: all 0.1s ease;
+        }
+        .seed-button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 0 #005227;
+        }
+        .code-input::placeholder {
+            color: #bccabb;
+            letter-spacing: 0;
+            font-size: 1rem;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#004c69",
+                        "error": "#ba1a1a",
+                        "secondary": "#00668a",
+                        "secondary-fixed-dim": "#7bd0ff",
+                        "background": "#f8f9ff",
+                        "tertiary-container": "#ebbf00",
+                        "on-secondary-fixed": "#001e2c",
+                        "surface-dim": "#ccdbf3",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed": "#ffe083",
+                        "surface-container-highest": "#d5e3fc",
+                        "primary-fixed-dim": "#4de082",
+                        "on-surface-variant": "#3d4a3e",
+                        "on-primary-fixed-variant": "#005227",
+                        "outline": "#6d7b6d",
+                        "on-surface": "#0d1c2e",
+                        "surface-container-high": "#dce9ff",
+                        "inverse-primary": "#4de082",
+                        "surface": "#f8f9ff",
+                        "tertiary-fixed-dim": "#eec200",
+                        "secondary-fixed": "#c4e7ff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#00210c",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-primary": "#ffffff",
+                        "primary": "#006d36",
+                        "surface-bright": "#f8f9ff",
+                        "on-tertiary-fixed-variant": "#574500",
+                        "on-secondary-container": "#004d6a",
+                        "secondary-container": "#40c2fd",
+                        "on-tertiary-container": "#624f00",
+                        "surface-tint": "#006d36",
+                        "primary-fixed": "#6dfe9c",
+                        "on-primary-container": "#005e2d",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-variant": "#d5e3fc",
+                        "surface-container-low": "#eff4ff",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#4ade80",
+                        "on-error": "#ffffff",
+                        "tertiary": "#735c00",
+                        "surface-container": "#e6eeff",
+                        "outline-variant": "#bccabb",
+                        "on-secondary": "#ffffff",
+                        "inverse-surface": "#233144",
+                        "on-background": "#0d1c2e",
+                        "on-tertiary-fixed": "#231b00"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "xl": "64px",
+                        "lg": "40px",
+                        "sm": "12px",
+                        "container-max": "800px",
+                        "gutter": "20px",
+                        "md": "24px",
+                        "base": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "body-lg": ["Quicksand"],
+                        "label-bold": ["Plus Jakarta Sans"],
+                        "body-md": ["Quicksand"],
+                        "chat-bubble": ["Quicksand"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "500"}],
+                        "label-bold": ["14px", {"lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "700"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+                        "chat-bubble": ["17px", {"lineHeight": "26px", "fontWeight": "500"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col items-center justify-center p-md" style="font-family: 'Pretendard', 'Quicksand', sans-serif;">
+<!-- Decorative Elements -->
+<div class="blob-bg top-[-10%] left-[-10%]"></div>
+<div class="blob-bg bottom-[-10%] right-[-10%]" style="background: radial-gradient(circle, rgba(64, 194, 253, 0.1) 0%, rgba(248, 249, 255, 0) 70%); animation-delay: -5s;"></div>
+<!-- Main Content Container -->
+<main class="w-full max-w-[480px] text-center z-10 flex flex-col items-center">
+<!-- Logo & Branding -->
+<div class="mb-lg space-y-md">
+<div class="inline-flex items-center justify-center w-24 h-24 bg-primary-container rounded-lg shadow-sm mb-base animate-bounce duration-[2000ms]">
+<span class="material-symbols-outlined text-[48px] text-on-primary-container" style="font-variation-settings: 'FILL' 1;">eco</span>
+</div>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile md:font-headline-lg md:text-headline-lg text-primary tracking-tight">✨ 프롬프트 만들기 챗봇</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-[320px] mx-auto leading-relaxed">안녕! 선생님이 준비한 수업에 오신 것을 환영해요. 함께 멋진 프롬프트를 만들어봐요!</p>
+</div>
+<!-- Login Card -->
+<div class="w-full bg-surface-container-lowest p-lg rounded-lg shadow-sm border border-surface-container-high space-y-md">
+<!-- Code Input Section -->
+<div class="text-left space-y-sm">
+<label class="font-label-bold text-label-bold text-outline ml-sm" for="access-code">수업 접속 코드</label>
+<div class="input-focus-ring group bg-surface-container-low rounded-lg transition-all border border-transparent focus-within:border-primary">
+<input class="w-full bg-transparent border-none text-center font-headline-lg text-headline-lg tracking-[0.5em] py-md text-primary placeholder:text-outline-variant focus:ring-0 code-input" id="access-code" maxlength="6" placeholder="0 0 0 0 0 0" type="text"/>
+</div>
+<p class="text-[12px] text-center text-on-surface-variant opacity-70">선생님이 알려주신 6자리 숫자를 입력하세요</p>
+</div>
+<!-- Name Input Section -->
+<div class="text-left space-y-sm">
+<label class="font-label-bold text-label-bold text-outline ml-sm" for="student-name">나의 이름</label>
+<div class="input-focus-ring group bg-surface-container-low rounded-lg transition-all border border-transparent focus-within:border-primary px-md flex items-center gap-base">
+<span class="material-symbols-outlined text-outline">person</span>
+<input class="w-full bg-transparent border-none py-md font-body-lg text-body-lg text-on-surface focus:ring-0" id="student-name" placeholder="이름을 입력해 주세요" type="text"/>
+</div>
+</div>
+<!-- Action Button -->
+<div class="pt-sm">
+<button class="seed-button w-full bg-primary text-on-primary font-headline-md text-headline-md py-md rounded-lg flex items-center justify-center gap-sm" onclick="enterClassroom()">
+                    수업 입장하기
+                    <span class="material-symbols-outlined">rocket_launch</span>
+</button>
+</div>
+</div>
+<!-- Helper Footer -->
+<div class="mt-lg flex items-center gap-md text-on-surface-variant">
+<div class="flex items-center gap-xs font-label-bold text-label-bold opacity-60 hover:opacity-100 transition-opacity cursor-help">
+<span class="material-symbols-outlined text-[18px]">help_outline</span>
+                도움이 필요해요
+            </div>
+<div class="w-px h-3 bg-outline-variant"></div>
+<div class="flex items-center gap-xs font-label-bold text-label-bold opacity-60">
+                EcoSocrates v1.0
+            </div>
+</div>
+</main>
+<!-- Visual Accents (Illustrations) -->
+<div class="fixed bottom-0 left-0 p-lg hidden md:block opacity-40 hover:opacity-100 transition-opacity">
+<div class="relative w-32 h-32 bg-secondary-container/20 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-[64px] text-secondary">lightbulb</span>
+<div class="absolute -top-2 -right-2 w-8 h-8 bg-tertiary-fixed rounded-full flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-on-tertiary-fixed-variant" style="font-variation-settings: 'FILL' 1;">wb_sunny</span>
+</div>
+</div>
+</div>
+<div class="fixed top-0 right-0 p-lg hidden md:block opacity-40 hover:opacity-100 transition-opacity">
+<div class="relative w-40 h-40">
+<div class="absolute inset-0 bg-primary-container/10 rounded-full animate-pulse"></div>
+<div class="absolute inset-4 bg-primary-container/20 rounded-full animate-pulse" style="animation-delay: 1s"></div>
+<div class="absolute inset-8 bg-primary-container/30 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-[48px] text-primary">psychology</span>
+</div>
+</div>
+</div>
+<script>
+        // Simple Interaction logic
+        function enterClassroom() {
+            const code = document.getElementById('access-code').value;
+            const name = document.getElementById('student-name').value;
+
+            if (code.length < 6) {
+                alert('접속 코드를 모두 입력해 주세요! 6자리 숫자에요.');
+                return;
+            }
+            if (name.trim() === '') {
+                alert('이름을 입력해 주세요! 친구들을 어떻게 불러야 할까요?');
+                return;
+            }
+
+            // Mock success animation
+            const button = document.querySelector('.seed-button');
+            button.innerHTML = '<span class="material-symbols-outlined animate-spin">eco</span> 입장 중...';
+            button.classList.add('opacity-80');
+            
+            setTimeout(() => {
+                console.log('Redirecting to classroom...', { code, name });
+                // In a real app: window.location.href = '/classroom?code=' + code;
+            }, 1000);
+        }
+
+        // Auto-focus logic for better UX
+        window.onload = () => {
+            document.getElementById('access-code').focus();
+        };
+
+        // Format code input to only allow numbers
+        document.getElementById('access-code').addEventListener('input', function(e) {
+            this.value = this.value.replace(/[^0-9]/g, '');
+        });
+    </script>
+</body></html>

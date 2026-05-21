@@ -1,0 +1,284 @@
+<!DOCTYPE html><html class="light" lang="ko"><head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>HITL 프롬프트 빌더 - AI 프롬프트 실습 도구</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Pretendard:wght@400;500;600;700&amp;family=Quicksand:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+    <script id="tailwind-config">
+          tailwind.config = {
+            darkMode: "class",
+            theme: {
+              extend: {
+                "colors": {
+                        "on-secondary-fixed-variant": "#004c69",
+                        "error": "#ba1a1a",
+                        "secondary": "#00668a",
+                        "secondary-fixed-dim": "#7bd0ff",
+                        "background": "#f8f9ff",
+                        "tertiary-container": "#ebbf00",
+                        "on-secondary-fixed": "#001e2c",
+                        "surface-dim": "#ccdbf3",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed": "#ffe083",
+                        "surface-container-highest": "#d5e3fc",
+                        "primary-fixed-dim": "#4de082",
+                        "on-surface-variant": "#3d4a3e",
+                        "on-primary-fixed-variant": "#005227",
+                        "outline": "#6d7b6d",
+                        "on-surface": "#0d1c2e",
+                        "surface-container-high": "#dce9ff",
+                        "inverse-primary": "#4de082",
+                        "surface": "#f8f9ff",
+                        "tertiary-fixed-dim": "#eec200",
+                        "secondary-fixed": "#c4e7ff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#00210c",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-primary": "#ffffff",
+                        "primary": "#006d36",
+                        "surface-bright": "#f8f9ff",
+                        "on-tertiary-fixed-variant": "#574500",
+                        "on-secondary-container": "#004d6a",
+                        "secondary-container": "#40c2fd",
+                        "on-tertiary-container": "#624f00",
+                        "surface-tint": "#006d36",
+                        "primary-fixed": "#6dfe9c",
+                        "on-primary-container": "#005e2d",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-variant": "#d5e3fc",
+                        "surface-container-low": "#eff4ff",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#4ade80",
+                        "on-error": "#ffffff",
+                        "tertiary": "#735c00",
+                        "surface-container": "#e6eeff",
+                        "outline-variant": "#bccabb",
+                        "on-secondary": "#ffffff",
+                        "inverse-surface": "#233144",
+                        "on-background": "#0d1c2e",
+                        "on-tertiary-fixed": "#231b00"
+                },
+                "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                },
+                "spacing": {
+                        "xs": "4px",
+                        "xl": "64px",
+                        "lg": "40px",
+                        "sm": "12px",
+                        "container-max": "800px",
+                        "gutter": "20px",
+                        "md": "24px",
+                        "base": "8px"
+                },
+                "fontFamily": {
+                        "headline-md": ["Pretendard", "Plus Jakarta Sans"],
+                        "headline-lg-mobile": ["Pretendard", "Plus Jakarta Sans"],
+                        "headline-lg": ["Pretendard", "Plus Jakarta Sans"],
+                        "body-lg": ["Pretendard", "Quicksand"],
+                        "label-bold": ["Pretendard", "Plus Jakarta Sans"],
+                        "body-md": ["Pretendard", "Quicksand"],
+                        "chat-bubble": ["Pretendard", "Quicksand"]
+                },
+                "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "500"}],
+                        "label-bold": ["14px", {"lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "700"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+                        "chat-bubble": ["17px", {"lineHeight": "26px", "fontWeight": "500"}]
+                }
+              },
+            },
+          }
+        </script>
+    <style>
+            body { -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; }
+            .no-copy { pointer-events: none; }
+            .bubble-bloom { animation: bloom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+            @keyframes bloom {
+                from { opacity: 0; transform: scale(0.9) translateY(10px); }
+                to { opacity: 1; transform: scale(1) translateY(0); }
+            }
+            .seed-glow { box-shadow: 0 0 20px rgba(74, 222, 128, 0.3); }
+            .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+            .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+            .custom-scrollbar::-webkit-scrollbar-thumb { background: #d5e3fc; border-radius: 10px; }
+        </style>
+    </head>
+    <body class="bg-background text-on-background font-body-md overflow-hidden">
+    <!-- TopAppBar -->
+    <header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-md py-sm shadow-sm bg-surface dark:bg-on-background">
+    <div class="flex items-center gap-3">
+    <span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings: 'FILL' 1;">terminal</span>
+    <h1 class="font-headline-lg-mobile text-headline-lg-mobile text-primary dark:text-primary-fixed tracking-tight">HITL 프롬프트 빌더</h1>
+    </div>
+    <div class="flex items-center gap-4">
+    <button class="hover:bg-primary-container/20 transition-colors p-2 rounded-full active:scale-95 transition-transform">
+    <span class="material-symbols-outlined text-on-surface-variant">account_circle</span>
+    </button>
+    <span class="font-label-bold text-on-surface-variant">로그아웃</span>
+    </div>
+    </header>
+    <!-- SideNavBar (Desktop Only) -->
+    <nav class="hidden md:flex flex-col h-screen fixed left-0 top-0 pt-20 pb-8 px-4 bg-surface-container-low dark:bg-on-background shadow-md w-64 z-40">
+    <div class="mb-8 px-4">
+    <h2 class="font-headline-md text-headline-md text-primary">AI 프롬프트 실습</h2>
+    <p class="text-on-surface-variant text-sm">인터랙티브 러닝 모드</p>
+    </div>
+    <div class="space-y-2">
+    <a class="bg-primary-container text-on-primary-container rounded-lg px-4 py-3 flex items-center gap-3 transition-all" href="#">
+    <span class="material-symbols-outlined">model_training</span>
+    <span class="font-label-bold">워크스페이스</span>
+    </a>
+    <a class="text-on-surface-variant hover:text-primary hover:bg-surface-container-high px-4 py-3 flex items-center gap-3 transition-all active:translate-x-1" href="#">
+    <span class="material-symbols-outlined">assignment</span>
+    <span class="font-label-bold">실습 계획</span>
+    </a>
+    <a class="text-on-surface-variant hover:text-primary hover:bg-surface-container-high px-4 py-3 flex items-center gap-3 transition-all active:translate-x-1" href="#">
+    <span class="material-symbols-outlined">analytics</span>
+    <span class="font-label-bold">수행 분석</span>
+    </a>
+    <a class="text-on-surface-variant hover:text-primary hover:bg-surface-container-high px-4 py-3 flex items-center gap-3 transition-all active:translate-x-1" href="#">
+    <span class="material-symbols-outlined">inventory_2</span>
+    <span class="font-label-bold">프롬프트 저장소</span>
+    </a>
+    </div>
+    </nav>
+    <!-- Main Content Canvas -->
+    <main class="pt-20 pb-24 md:pl-64 h-screen flex flex-col md:flex-row gap-6 p-4">
+    <!-- Chat Area -->
+    <div class="flex-1 flex flex-col max-w-container-max mx-auto w-full h-full bg-white rounded-lg shadow-sm overflow-hidden relative border border-surface-container">
+    <!-- Progress Header -->
+    <div class="p-4 bg-surface-container-low border-b border-surface-container-highest">
+    <div class="flex justify-between items-center mb-2">
+    <h3 class="font-label-bold text-primary flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">psychology</span>
+                            현재 수업 주제: [교사 설정 주제]
+                        </h3>
+    <span class="text-xs font-bold bg-primary text-white px-2 py-1 rounded-full">5단계 중 2단계: 구체화</span>
+    </div>
+    <!-- Progress Tracker -->
+    <div class="relative h-2 bg-surface-container-highest rounded-full overflow-hidden flex">
+    <div class="w-2/5 h-full bg-primary rounded-full transition-all duration-1000"></div>
+    </div>
+    <div class="flex justify-between mt-2">
+    <span class="material-symbols-outlined text-primary text-lg" style="font-variation-settings: 'FILL' 1;">explore</span>
+    <span class="material-symbols-outlined text-on-surface-variant/30 text-lg">edit_note</span>
+    <span class="material-symbols-outlined text-on-surface-variant/30 text-lg">auto_fix_high</span>
+    </div>
+    </div>
+    <!-- Chat Bubbles -->
+    <div class="flex-1 overflow-y-auto p-md space-y-md custom-scrollbar">
+    <!-- Bot Bubble -->
+    <div class="flex items-start gap-3 bubble-bloom">
+    <div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0 shadow-sm">
+    <span class="material-symbols-outlined text-on-secondary-container">neurology</span>
+    </div>
+    <div class="max-w-[80%] bg-[#E1F5FE] text-on-surface p-4 rounded-2xl rounded-tl-none shadow-sm">
+    <p class="font-chat-bubble text-chat-bubble">오늘의 주제에 대해 우리가 논의한 내용이 실제로 적용된다면 어떤 구체적인 모습으로 나타날까요?</p>
+    </div>
+    </div>
+    <!-- User Bubble -->
+    <div class="flex items-start gap-3 justify-end bubble-bloom" style="animation-delay: 0.2s;">
+    <div class="max-w-[80%] bg-primary text-on-primary p-4 rounded-2xl rounded-tr-none shadow-md">
+    <p class="font-chat-bubble text-chat-bubble">사람들이 더 효율적으로 소통하고 창의적인 일을 할 수 있게 될 것 같아요!</p>
+    </div>
+    <div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center flex-shrink-0 shadow-sm">
+    <span class="material-symbols-outlined text-on-primary-container">person</span>
+    </div>
+    </div>
+    <!-- Suggestion Chips -->
+    <div class="flex flex-wrap gap-2 mt-4 bubble-bloom" style="animation-delay: 0.5s;">
+    <button class="bg-tertiary-container/30 border-2 border-tertiary-container/50 px-4 py-2 rounded-full text-on-tertiary-container text-sm font-label-bold hover:bg-tertiary-container/50 transition-colors">
+                            구체적인 실행 사례를 그려볼까요?
+                        </button>
+    <button class="bg-tertiary-container/30 border-2 border-tertiary-container/50 px-4 py-2 rounded-full text-on-tertiary-container text-sm font-label-bold hover:bg-tertiary-container/50 transition-colors">
+                            이 과정에서 발생할 수 있는 문제점은?
+                        </button>
+    </div>
+    </div>
+    <!-- Input Bar -->
+    <div class="p-4 bg-white border-t border-surface-container">
+    <div class="flex items-center gap-2 bg-surface-container-low rounded-full px-4 py-2 border-2 border-transparent focus-within:border-primary-container transition-all">
+    <input class="flex-1 bg-transparent border-none focus:ring-0 text-on-surface font-body-md placeholder:text-on-surface-variant/50" placeholder="프롬프트 또는 실습 내용을 입력하세요" type="text">
+    <button class="w-10 h-10 bg-primary text-on-primary rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all">
+    <span class="material-symbols-outlined" style="transform: rotate(-45deg); margin-left: 2px;">send</span>
+    </button>
+    </div>
+    </div>
+    </div>
+    <!-- Right Panel: Idea Gallery -->
+    <aside class="hidden lg:flex flex-col w-72 h-full gap-4">
+    <div class="bg-white rounded-lg p-6 shadow-sm border border-surface-container flex-1 flex flex-col">
+    <div class="flex items-center gap-2 mb-4">
+    <span class="material-symbols-outlined text-primary">data_object</span>
+    <h3 class="font-label-bold text-on-surface">프롬프트 결과물 갤러리</h3>
+    </div>
+    <div class="flex-1 border-2 border-dashed border-surface-container-highest rounded-2xl flex flex-col items-center justify-center p-6 text-center space-y-4">
+    <div class="w-20 h-20 bg-surface-container-low rounded-full flex items-center justify-center">
+    <span class="material-symbols-outlined text-4xl text-on-surface-variant/20">temp_preferences_custom</span>
+    </div>
+    <p class="text-sm text-on-surface-variant font-medium">생성된 이미지나 텍스트 결과를 업로드하여 AI와 함께 개선해보세요</p>
+    <button class="w-full bg-secondary-container text-on-secondary-container py-3 rounded-xl font-label-bold flex items-center justify-center gap-2 hover:bg-secondary-container/80 transition-all active:scale-95">
+    <span class="material-symbols-outlined">upload_file</span>
+                            결과물 업로드
+                        </button>
+    </div>
+    <!-- Placeholder Card -->
+    <div class="mt-4 p-3 bg-surface-container-lowest rounded-xl border border-surface-container-highest">
+    <div class="aspect-video bg-surface-container-highest rounded-lg mb-2 overflow-hidden relative">
+    <img class="w-full h-full object-cover opacity-20 grayscale" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBE_WiqA87p2qvASO48ue734cMpvOsUKubO928OKbrKoTMpUuulrVO4mrGAAU2wS-adIBWLBdWn72UYPMNoCVvnFbVq167Do5xbnlt5cQaWuIHBjR_Io_zi66eUkegxLMUmBR7OYdQMjHCIA3avQYfI92lF4k35-ZzfAXT-TJKxeZDCmU4l-aQK_YXZJdD9AQuTYa-C64zCY0-v6HUkm206LzR49S9pOqhwwxcAYE2Iw_k-OQgMrAanY8eYLWYQXD1hYSMdW2KMTo8">
+    <div class="absolute inset-0 flex items-center justify-center">
+    <span class="material-symbols-outlined text-on-surface-variant/20 text-4xl">lock</span>
+    </div>
+    </div>
+    <p class="text-xs text-on-surface-variant text-center font-label-bold">시각화 단계에서 해제됩니다</p>
+    </div>
+    </div>
+    </aside>
+    </main>
+    <!-- BottomNavBar (Mobile Only) -->
+    <nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-4 pt-2 bg-surface-container-highest dark:bg-on-background shadow-[0_-4px_10px_rgba(0,0,0,0.05)] rounded-t-lg">
+    <button class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-xl px-6 py-1 active:scale-90 transition-transform duration-200">
+    <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+    <span class="font-label-bold">실습</span>
+    </button>
+    <button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2 hover:bg-surface-container-high transition-colors active:scale-90 transition-transform duration-200">
+    <span class="material-symbols-outlined">trending_up</span>
+    <span class="font-label-bold">성장</span>
+    </button>
+    <button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2 hover:bg-surface-container-high transition-colors active:scale-90 transition-transform duration-200">
+    <span class="material-symbols-outlined">help</span>
+    <span class="font-label-bold">가이드</span>
+    </button>
+    </nav>
+    <script>
+            // Micro-interaction for input sending
+            const sendBtn = document.querySelector('button .material-symbols-outlined[style*="send"]')?.parentElement;
+            const input = document.querySelector('input[type="text"]');
+            
+            if (sendBtn && input) {
+                sendBtn.addEventListener('click', () => {
+                    if (input.value.trim() !== "") {
+                        // Create visual feedback
+                        sendBtn.classList.add('scale-125');
+                        setTimeout(() => sendBtn.classList.remove('scale-125'), 200);
+                        input.value = "";
+                    }
+                });
+            }
+    
+            // Anti-copy prevention
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v')) {
+                    e.preventDefault();
+                }
+            });
+        </script>
+    </body></html>

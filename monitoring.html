@@ -1,0 +1,357 @@
+<!DOCTYPE html><html lang="ko"><head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>HITL 프롬프트 관리 시스템 - 교사 모니터링 대시보드</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Quicksand:wght@400;500;600;700&amp;family=Pretendard:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+    <script id="tailwind-config">
+          tailwind.config = {
+            darkMode: "class",
+            theme: {
+              extend: {
+                "colors": {
+                        "on-secondary-fixed-variant": "#004c69",
+                        "error": "#ba1a1a",
+                        "secondary": "#00668a",
+                        "secondary-fixed-dim": "#7bd0ff",
+                        "background": "#f8f9ff",
+                        "tertiary-container": "#ebbf00",
+                        "on-secondary-fixed": "#001e2c",
+                        "surface-dim": "#ccdbf3",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed": "#ffe083",
+                        "surface-container-highest": "#d5e3fc",
+                        "primary-fixed-dim": "#4de082",
+                        "on-surface-variant": "#3d4a3e",
+                        "on-primary-fixed-variant": "#005227",
+                        "outline": "#6d7b6d",
+                        "on-surface": "#0d1c2e",
+                        "surface-container-high": "#dce9ff",
+                        "inverse-primary": "#4de082",
+                        "surface": "#f8f9ff",
+                        "tertiary-fixed-dim": "#eec200",
+                        "secondary-fixed": "#c4e7ff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#00210c",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-primary": "#ffffff",
+                        "primary": "#006d36",
+                        "surface-bright": "#f8f9ff",
+                        "on-tertiary-fixed-variant": "#574500",
+                        "on-secondary-container": "#004d6a",
+                        "secondary-container": "#40c2fd",
+                        "on-tertiary-container": "#624f00",
+                        "surface-tint": "#006d36",
+                        "primary-fixed": "#6dfe9c",
+                        "on-primary-container": "#005e2d",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-variant": "#d5e3fc",
+                        "surface-container-low": "#eff4ff",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#4ade80",
+                        "on-error": "#ffffff",
+                        "tertiary": "#735c00",
+                        "surface-container": "#e6eeff",
+                        "outline-variant": "#bccabb",
+                        "on-secondary": "#ffffff",
+                        "inverse-surface": "#233144",
+                        "on-background": "#0d1c2e",
+                        "on-tertiary-fixed": "#231b00"
+                },
+                "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                },
+                "spacing": {
+                        "xs": "4px",
+                        "xl": "64px",
+                        "lg": "40px",
+                        "sm": "12px",
+                        "container-max": "800px",
+                        "gutter": "20px",
+                        "md": "24px",
+                        "base": "8px"
+                },
+                "fontFamily": {
+                        "headline-md": ["Pretendard", "Plus Jakarta Sans"],
+                        "headline-lg": ["Pretendard", "Plus Jakarta Sans"],
+                        "body-lg": ["Pretendard", "Quicksand"],
+                        "label-bold": ["Pretendard", "Plus Jakarta Sans"],
+                        "body-md": ["Pretendard", "Quicksand"],
+                        "chat-bubble": ["Pretendard", "Quicksand"]
+                },
+              }
+            }
+          }
+        </script>
+    <style>
+            body { font-family: 'Pretendard', 'Quicksand', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+            .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+            .filled-icon { font-variation-settings: 'FILL' 1; }
+            .dashboard-grid {
+                display: grid;
+                grid-template-columns: 1fr 320px;
+                gap: 24px;
+            }
+            @media (max-width: 1024px) {
+                .dashboard-grid { grid-template-columns: 1fr; }
+            }
+        </style>
+    </head>
+    <body class="bg-background text-on-surface min-h-screen">
+    <!-- TopAppBar -->
+    <header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-md py-sm shadow-sm bg-surface dark:bg-on-background">
+    <div class="flex items-center gap-4">
+    <span class="material-symbols-outlined text-primary font-headline-md text-headline-md">terminal</span>
+    <h1 class="font-headline-md text-headline-md text-primary dark:text-primary-fixed tracking-tight">HITL 프롬프트 관리 시스템</h1>
+    </div>
+    <div class="flex items-center gap-md">
+    <div class="hidden md:flex items-center gap-base">
+    <span class="font-label-bold text-label-bold text-on-surface-variant">교실</span>
+    <span class="font-label-bold text-label-bold text-primary font-bold">실습 대시보드</span>
+    </div>
+    <button class="flex items-center gap-xs p-base rounded-full hover:bg-primary-container/20 transition-colors">
+    <span class="material-symbols-outlined">account_circle</span>
+    <span class="font-label-bold text-label-bold">로그아웃</span>
+    </button>
+    </div>
+    </header>
+    <!-- SideNavBar -->
+    <nav class="hidden md:flex flex-col h-screen fixed left-0 top-0 pt-20 pb-8 px-4 h-full w-64 bg-surface-container-low dark:bg-on-background shadow-md">
+    <div class="mb-lg px-4">
+    <h2 class="font-headline-md text-headline-md text-primary">프롬프트 생성 실습 현황</h2>
+    <p class="text-on-surface-variant text-sm">실습 지원 모드</p>
+    </div>
+    <div class="space-y-2">
+    <a class="text-on-surface-variant hover:text-primary px-4 py-3 flex items-center gap-3 hover:bg-surface-container-high transition-all" href="#">
+    <span class="material-symbols-outlined">school</span>
+    <span class="font-label-bold text-label-bold">교실 현황</span>
+    </a>
+    <a class="text-on-surface-variant hover:text-primary px-4 py-3 flex items-center gap-3 hover:bg-surface-container-high transition-all" href="#">
+    <span class="material-symbols-outlined">description</span>
+    <span class="font-label-bold text-label-bold">학습 계획안</span>
+    </a>
+    <a class="bg-primary-container text-on-primary-container rounded-full px-4 py-3 flex items-center gap-3 transition-transform active:translate-x-1" href="#">
+    <span class="material-symbols-outlined filled-icon" style="font-variation-settings: 'FILL' 1;">monitoring</span>
+    <span class="font-label-bold text-label-bold">진행 분석</span>
+    </a>
+    <a class="text-on-surface-variant hover:text-primary px-4 py-3 flex items-center gap-3 hover:bg-surface-container-high transition-all" href="#">
+    <span class="material-symbols-outlined">auto_stories</span>
+    <span class="font-label-bold text-label-bold">자료실</span>
+    </a>
+    </div>
+    </nav>
+    <!-- Main Content -->
+    <main class="md:ml-64 pt-24 pb-24 px-gutter md:px-lg max-w-[1400px] mx-auto">
+    <!-- Header & Title -->
+    <div class="mb-lg flex flex-col md:flex-row md:items-end justify-between gap-md">
+    <div>
+    <h2 class="font-headline-lg text-headline-lg text-on-surface flex items-center gap-2">
+                    📊 실습 실시간 현황 <span class="text-primary-fixed-dim text-body-lg font-medium">(2026.05.21 3교시)</span>
+    </h2>
+    <p class="text-on-surface-variant mt-xs">학습자들의 프롬프트 생성 프로세스와 진행도를 실시간으로 모니터링합니다.</p>
+    </div>
+    <!-- Growth metaphor visualization -->
+    <div class="bg-surface-container-high px-md py-sm rounded-full flex items-center gap-4">
+    <div class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-primary text-xl filled-icon" style="font-variation-settings: 'FILL' 1;">insights</span>
+    <span class="text-label-bold font-label-bold">학습 달성도</span>
+    </div>
+    <div class="flex gap-1">
+    <div class="w-8 h-2 bg-primary rounded-full"></div>
+    <div class="w-8 h-2 bg-primary rounded-full"></div>
+    <div class="w-8 h-2 bg-primary rounded-full"></div>
+    <div class="w-8 h-2 bg-surface-dim rounded-full"></div>
+    </div>
+    </div>
+    </div>
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-md mb-lg">
+    <div class="bg-surface-container-lowest p-md rounded-full shadow-sm border border-outline-variant/30 flex flex-col items-center">
+    <span class="text-primary font-headline-md text-headline-md">12</span>
+    <span class="text-on-surface-variant font-label-bold">완료</span>
+    </div>
+    <div class="bg-surface-container-lowest p-md rounded-full shadow-sm border border-outline-variant/30 flex flex-col items-center">
+    <span class="text-secondary font-headline-md text-headline-md">18</span>
+    <span class="text-on-surface-variant font-label-bold">진행 중</span>
+    </div>
+    <div class="bg-surface-container-lowest p-md rounded-full shadow-sm border border-outline-variant/30 flex flex-col items-center">
+    <span class="text-outline font-headline-md text-headline-md">5</span>
+    <span class="text-on-surface-variant font-label-bold">미시작</span>
+    </div>
+    <div class="bg-error-container p-md rounded-full shadow-sm border border-error/20 flex flex-col items-center animate-pulse">
+    <span class="text-error font-headline-md text-headline-md">2</span>
+    <span class="text-error font-label-bold">경고 발생</span>
+    </div>
+    </div>
+    <div class="dashboard-grid">
+    <!-- Central Table -->
+    <div class="bg-surface-container-lowest rounded-lg shadow-md overflow-hidden flex flex-col border border-outline-variant/20">
+    <div class="overflow-x-auto">
+    <table class="w-full text-left border-collapse">
+    <thead>
+    <tr class="bg-surface-container-low border-b border-outline-variant/20">
+    <th class="p-md font-label-bold text-on-surface-variant">학습자 이름</th>
+    <th class="p-md font-label-bold text-on-surface-variant">현재 단계</th>
+    <th class="p-md font-label-bold text-on-surface-variant">루프 횟수</th>
+    <th class="p-md font-label-bold text-on-surface-variant">경고 현황</th>
+    <th class="p-md font-label-bold text-on-surface-variant"></th>
+    </tr>
+    </thead>
+    <tbody class="divide-y divide-outline-variant/10">
+    <!-- Student Row 1 -->
+    <tr class="hover:bg-surface-container-high/30 transition-colors">
+    <td class="p-md font-body-md">김태희</td>
+    <td class="p-md">
+    <span class="px-3 py-1 bg-primary-container text-on-primary-container rounded-full text-xs font-bold">완료</span>
+    </td>
+    <td class="p-md font-body-md text-center">4회</td>
+    <td class="p-md">
+    <span class="text-outline-variant">-</span>
+    </td>
+    <td class="p-md text-right">
+    <button class="text-secondary font-label-bold hover:underline">상세 보기</button>
+    </td>
+    </tr>
+    <!-- Student Row 2 (Warning) -->
+    <tr class="bg-error-container/10 hover:bg-error-container/20 transition-colors">
+    <td class="p-md font-body-md font-bold">이서연</td>
+    <td class="p-md">
+    <span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container rounded-full text-xs font-bold">프롬프트</span>
+    </td>
+    <td class="p-md font-body-md text-center">8회</td>
+    <td class="p-md">
+    <span class="flex items-center gap-1 text-error text-xs font-bold">
+    <span class="material-symbols-outlined text-sm">warning</span>
+                                        복붙 시도 (2)
+                                    </span>
+    </td>
+    <td class="p-md text-right">
+    <button class="bg-error text-on-error px-4 py-1.5 rounded-full text-xs font-bold shadow-sm active:scale-95 transition-transform">개입하기</button>
+    </td>
+    </tr>
+    <!-- Student Row 3 -->
+    <tr class="hover:bg-surface-container-high/30 transition-colors">
+    <td class="p-md font-body-md">박준우</td>
+    <td class="p-md">
+    <span class="px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full text-xs font-bold">시각화</span>
+    </td>
+    <td class="p-md font-body-md text-center">2회</td>
+    <td class="p-md">
+    <span class="text-error text-xs font-bold">부적절 언어</span>
+    </td>
+    <td class="p-md text-right">
+    <button class="text-secondary font-label-bold hover:underline">상세 보기</button>
+    </td>
+    </tr>
+    <!-- Student Row 4 -->
+    <tr class="hover:bg-surface-container-high/30 transition-colors">
+    <td class="p-md font-body-md">최유진</td>
+    <td class="p-md">
+    <span class="px-3 py-1 bg-surface-container-highest text-on-surface-variant rounded-full text-xs font-bold">탐색</span>
+    </td>
+    <td class="p-md font-body-md text-center">1회</td>
+    <td class="p-md">
+    <span class="text-outline-variant">-</span>
+    </td>
+    <td class="p-md text-right">
+    <button class="text-secondary font-label-bold hover:underline">상세 보기</button>
+    </td>
+    </tr>
+    <!-- Student Row 5 -->
+    <tr class="hover:bg-surface-container-high/30 transition-colors">
+    <td class="p-md font-body-md">정현수</td>
+    <td class="p-md">
+    <span class="px-3 py-1 bg-primary-container text-on-primary-container/70 rounded-full text-xs font-bold">구체화</span>
+    </td>
+    <td class="p-md font-body-md text-center">3회</td>
+    <td class="p-md">
+    <span class="text-outline-variant">-</span>
+    </td>
+    <td class="p-md text-right">
+    <button class="text-secondary font-label-bold hover:underline">상세 보기</button>
+    </td>
+    </tr>
+    </tbody>
+    </table>
+    </div>
+    </div>
+    <!-- Real-time Alert Feed -->
+    <aside class="flex flex-col gap-md">
+    <div class="bg-surface-container-highest rounded-lg p-md shadow-sm h-fit">
+    <h3 class="font-label-bold text-label-bold mb-md flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">notifications_active</span>
+                        실시간 알림 피드
+                    </h3>
+    <div class="space-y-3">
+    <!-- Notification Item -->
+    <div class="bg-surface p-sm rounded-full border-l-4 border-error shadow-sm text-xs px-6">
+    <div class="flex justify-between items-start mb-1">
+    <span class="font-bold text-on-surface">이서연 학생</span>
+    <span class="text-on-surface-variant">11:24</span>
+    </div>
+    <p class="text-on-surface-variant">복사 붙여넣기 시도가 감지되었습니다.</p>
+    </div>
+    <!-- Notification Item -->
+    <div class="bg-surface p-sm rounded-full border-l-4 border-tertiary shadow-sm text-xs px-6">
+    <div class="flex justify-between items-start mb-1">
+    <span class="font-bold text-on-surface">박준우 학생</span>
+    <span class="text-on-surface-variant">11:20</span>
+    </div>
+    <p class="text-on-surface-variant">부적절 언어가 필터링되었습니다.</p>
+    </div>
+    <!-- Notification Item -->
+    <div class="bg-surface p-sm rounded-full border-l-4 border-primary shadow-sm text-xs px-6">
+    <div class="flex justify-between items-start mb-1">
+    <span class="font-bold text-on-surface">김태희 학생</span>
+    <span class="text-on-surface-variant">11:15</span>
+    </div>
+    <p class="text-on-surface-variant">최종 과제물을 제출했습니다.</p>
+    </div>
+    </div>
+    </div>
+    <div class="bg-primary/5 rounded-full p-md border border-primary/10 px-8">
+    <h4 class="font-label-bold text-label-bold text-primary mb-2">학습 지원 가이드</h4>
+    <p class="text-xs text-on-surface-variant leading-relaxed">
+                        현재 '프롬프트' 단계에서 평균 6회 이상의 루프가 발생하고 있습니다. 학습자들에게 '명확한 제약 조건'을 추가해보라고 조언해주시면 도움이 될 거예요!
+                    </p>
+    </div>
+    </aside>
+    </div>
+    <!-- Bottom Action Buttons -->
+    <div class="mt-xl flex flex-wrap gap-md justify-center">
+    <button class="flex items-center gap-2 bg-primary text-on-primary font-label-bold px-lg py-3 rounded-full shadow-lg hover:shadow-xl active:scale-95 transition-all">
+    <span class="material-symbols-outlined filled-icon">format_list_bulleted</span>
+                전체 프롬프트 데이터 확인
+            </button>
+    <button class="flex items-center gap-2 bg-white text-secondary border-2 border-secondary font-label-bold px-lg py-3 rounded-full hover:bg-secondary/5 active:scale-95 transition-all">
+    <span class="material-symbols-outlined">download</span>
+                실습 로그 CSV 내보내기
+            </button>
+    </div>
+    </main>
+    <!-- BottomNavBar (Mobile Only) -->
+    <nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-4 pt-2 bg-surface-container-highest dark:bg-on-background shadow-[0_-4px_10px_rgba(0,0,0,0.05)] rounded-t-lg">
+    <a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2" href="#">
+    <span class="material-symbols-outlined">chat_bubble</span>
+    <span class="font-label-bold text-[10px]">채팅</span>
+    </a>
+    <a class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-full px-6 py-1 active:scale-90 transition-transform duration-200" href="#">
+    <span class="material-symbols-outlined">monitoring</span>
+    <span class="font-label-bold text-[10px]">현황</span>
+    </a>
+    <a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2" href="#">
+    <span class="material-symbols-outlined">help_outline</span>
+    <span class="font-label-bold text-[10px]">도움말</span>
+    </a>
+    </nav>
+    <script>
+        // Simple logic for real-time vibe
+        setInterval(() => {
+            // Mock update placeholder
+        }, 60000);
+    </script>
+    </body></html>

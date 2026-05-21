@@ -1,0 +1,339 @@
+<!DOCTYPE html><html class="light" lang="ko"><head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>HITL 프롬프트 빌더 - 수업 및 챗봇 설정</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <!-- Korean Fonts: Pretendard for UI and Noto Sans KR for backup -->
+    <link as="style" crossorigin="" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Quicksand:wght@400;500;600;700&amp;family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+    <style>
+            .material-symbols-outlined {
+                font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+                vertical-align: middle;
+            }
+            .filled-icon {
+                font-variation-settings: 'FILL' 1;
+            }
+            body {
+                font-family: 'Pretendard', 'Quicksand', 'Noto Sans KR', sans-serif;
+                background-color: #f8f9ff;
+            }
+            .glass-card {
+                background: rgba(255, 255, 255, 0.8);
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+            }
+            .seed-button {
+                box-shadow: 0 4px 0 0 #005227;
+                transition: all 0.1s ease;
+            }
+            .seed-button:active {
+                transform: translateY(2px);
+                box-shadow: 0 2px 0 0 #005227;
+            }
+        </style>
+    <script id="tailwind-config">
+            tailwind.config = {
+                darkMode: "class",
+                theme: {
+                    extend: {
+                        "colors": {
+                            "on-secondary-fixed-variant": "#004c69",
+                            "error": "#ba1a1a",
+                            "secondary": "#00668a",
+                            "secondary-fixed-dim": "#7bd0ff",
+                            "background": "#f8f9ff",
+                            "tertiary-container": "#ebbf00",
+                            "on-secondary-fixed": "#001e2c",
+                            "surface-dim": "#ccdbf3",
+                            "on-error-container": "#93000a",
+                            "tertiary-fixed": "#ffe083",
+                            "surface-container-highest": "#d5e3fc",
+                            "primary-fixed-dim": "#4de082",
+                            "on-surface-variant": "#3d4a3e",
+                            "on-primary-fixed-variant": "#005227",
+                            "outline": "#6d7b6d",
+                            "on-surface": "#0d1c2e",
+                            "surface-container-high": "#dce9ff",
+                            "inverse-primary": "#4de082",
+                            "surface": "#f8f9ff",
+                            "tertiary-fixed-dim": "#eec200",
+                            "secondary-fixed": "#c4e7ff",
+                            "on-tertiary": "#ffffff",
+                            "on-primary-fixed": "#00210c",
+                            "inverse-on-surface": "#eaf1ff",
+                            "on-primary": "#ffffff",
+                            "primary": "#006d36",
+                            "surface-bright": "#f8f9ff",
+                            "on-tertiary-fixed-variant": "#574500",
+                            "on-secondary-container": "#004d6a",
+                            "secondary-container": "#40c2fd",
+                            "on-tertiary-container": "#624f00",
+                            "surface-tint": "#006d36",
+                            "primary-fixed": "#6dfe9c",
+                            "on-primary-container": "#005e2d",
+                            "surface-container-lowest": "#ffffff",
+                            "surface-variant": "#d5e3fc",
+                            "surface-container-low": "#eff4ff",
+                            "error-container": "#ffdad6",
+                            "primary-container": "#4ade80",
+                            "on-error": "#ffffff",
+                            "tertiary": "#735c00",
+                            "surface-container": "#e6eeff",
+                            "outline-variant": "#bccabb",
+                            "on-secondary": "#ffffff",
+                            "inverse-surface": "#233144",
+                            "on-background": "#0d1c2e",
+                            "on-tertiary-fixed": "#231b00"
+                        },
+                        "borderRadius": {
+                            "DEFAULT": "1rem",
+                            "lg": "2rem",
+                            "xl": "3rem",
+                            "full": "9999px"
+                        },
+                        "spacing": {
+                            "xs": "4px",
+                            "xl": "64px",
+                            "lg": "40px",
+                            "sm": "12px",
+                            "container-max": "800px",
+                            "gutter": "20px",
+                            "md": "24px",
+                            "base": "8px"
+                        },
+                        "fontFamily": {
+                            "headline-md": ["Pretendard", "Plus Jakarta Sans"],
+                            "headline-lg": ["Pretendard", "Plus Jakarta Sans"],
+                            "body-lg": ["Pretendard", "Quicksand"],
+                            "label-bold": ["Pretendard", "Plus Jakarta Sans"],
+                            "body-md": ["Pretendard", "Quicksand"]
+                        },
+                        "fontSize": {
+                            "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                            "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+                            "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "500" }],
+                            "label-bold": ["14px", { "lineHeight": "20px", "letterSpacing": "0.02em", "fontWeight": "700" }],
+                            "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "500" }]
+                        }
+                    },
+                },
+            }
+        </script>
+    </head>
+    <body class="bg-background text-on-background min-h-screen">
+    <!-- TopAppBar -->
+    <header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-md py-sm shadow-sm bg-surface dark:bg-on-background">
+    <div class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-primary text-3xl" data-icon="psychology">psychology</span>
+    <span class="font-headline-lg text-headline-lg text-primary tracking-tight">HITL 프롬프트 빌더</span>
+    </div>
+    <div class="flex items-center gap-4">
+    <button class="flex items-center gap-2 text-on-surface-variant hover:bg-primary-container/20 px-4 py-2 rounded-lg transition-colors">
+    <span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+    <span class="font-label-bold text-label-bold">로그아웃</span>
+    </button>
+    </div>
+    </header>
+    <!-- SideNavBar -->
+    <aside class="hidden md:flex flex-col h-screen fixed left-0 top-0 pt-20 pb-8 px-4 w-64 bg-surface-container-low shadow-md">
+    <div class="px-4 mb-8">
+    <h2 class="font-headline-md text-headline-md text-primary">워크스페이스</h2>
+    <p class="text-on-surface-variant text-sm">프롬프트 최적화 모드 활성</p>
+    </div>
+    <nav class="space-y-2">
+    <a class="text-on-surface-variant hover:text-primary px-4 py-3 flex items-center gap-3 hover:bg-surface-container-high transition-all" href="#">
+    <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+    <span class="font-label-bold text-label-bold">대시보드</span>
+    </a>
+    <a class="bg-primary-container text-on-primary-container rounded-lg px-4 py-3 flex items-center gap-3 transition-transform active:translate-x-1" href="#">
+    <span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+    <span class="font-label-bold text-label-bold">프롬프트 설정</span>
+    </a>
+    <a class="text-on-surface-variant hover:text-primary px-4 py-3 flex items-center gap-3 hover:bg-surface-container-high transition-all" href="#">
+    <span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+    <span class="font-label-bold text-label-bold">성과 분석</span>
+    </a>
+    <a class="text-on-surface-variant hover:text-primary px-4 py-3 flex items-center gap-3 hover:bg-surface-container-high transition-all" href="#">
+    <span class="material-symbols-outlined" data-icon="history_edu">history_edu</span>
+    <span class="font-label-bold text-label-bold">빌드 히스토리</span>
+    </a>
+    </nav>
+    </aside>
+    <!-- Main Content Canvas -->
+    <main class="md:ml-64 pt-24 pb-32 px-gutter">
+    <div class="max-w-container-max mx-auto">
+    <!-- Header Section -->
+    <div class="mb-lg">
+    <h1 class="font-headline-lg text-headline-lg text-on-surface mb-2">⚙️ 프롬프트 및 시스템 설정</h1>
+    <p class="font-body-md text-body-md text-on-surface-variant">사용자와의 상호작용을 극대화할 수 있도록 프롬프트 파라미터를 조정하세요.</p>
+    </div>
+    <!-- Section 1: 수업 기본 정보 -->
+    <section class="mb-md p-md bg-surface-container-lowest rounded-lg shadow-sm border border-surface-container-high relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-2 h-full bg-primary-container"></div>
+    <div class="flex items-center gap-2 mb-4">
+    <span class="material-symbols-outlined text-primary" data-icon="star">star</span>
+    <h2 class="font-headline-md text-headline-md">핵심 설정 정보</h2>
+    <button class="group relative">
+    <span class="material-symbols-outlined text-on-surface-variant text-lg" data-icon="help_outline">help_outline</span>
+    <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-on-background text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">주제를 명확히 설정하면 AI가 더 정확한 문맥을 파악합니다.</div>
+    </button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+    <div class="flex flex-col gap-2">
+    <label class="font-label-bold text-label-bold text-primary flex items-center gap-1">
+        수업 주제 (핵심)
+        <span class="text-xs font-normal text-on-surface-variant">(필수 항목)</span>
+    </label>
+    <input class="w-full bg-surface-container-low border-2 border-primary focus:ring-2 focus:ring-primary/20 rounded-lg px-4 py-3 font-body-md text-body-md transition-colors outline-none" type="text" value="자연에너지를 활용한 미래 실생활">
+    </div>
+    <div class="flex flex-col gap-2">
+    <label class="font-label-bold text-label-bold text-on-surface-variant">세션 제한 시간 (분)</label>
+    <div class="relative">
+    <input class="w-full bg-surface-container-low border-2 border-outline-variant focus:border-primary rounded-lg px-4 py-3 font-body-md text-body-md outline-none" type="number" value="40">
+    <span class="absolute right-4 top-1/2 -translate-y-1/2 font-label-bold text-on-surface-variant">분</span>
+    </div>
+    </div>
+    </div>
+    </section>
+    <!-- Section 2: 챗봇 세부 설정 (범용화됨) -->
+    <section class="mb-md p-md bg-surface-container-lowest rounded-lg shadow-sm border border-surface-container-high relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-2 h-full bg-secondary-container"></div>
+    <div class="flex items-center gap-2 mb-4">
+    <span class="material-symbols-outlined text-secondary" data-icon="tune">tune</span>
+    <h2 class="font-headline-md text-headline-md">프롬프트 가이드라인 설정</h2>
+    </div>
+    <div class="flex flex-col gap-6">
+    <div>
+    <div class="flex items-center gap-2 mb-3">
+    <label class="font-label-bold text-label-bold text-on-surface-variant">포함할 학습 키워드 및 범주</label>
+    <span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="help_outline">help_outline</span>
+    </div>
+    <div class="flex flex-wrap gap-3">
+    <label class="flex items-center gap-2 bg-surface-container-low hover:bg-surface-container-high px-4 py-2 rounded-full cursor-pointer transition-colors">
+    <input checked="" class="w-5 h-5 rounded border-primary text-primary focus:ring-primary" type="checkbox">
+    <span class="font-body-md">전체 허용</span>
+    </label>
+    <label class="flex items-center gap-2 bg-white border-2 border-primary-container/30 px-4 py-2 rounded-full cursor-pointer transition-colors">
+    <input checked="" class="w-5 h-5 rounded border-primary text-primary focus:ring-primary" type="checkbox">
+    <span class="font-body-md">기술적 원리</span>
+    </label>
+    <label class="flex items-center gap-2 bg-white border-2 border-primary-container/30 px-4 py-2 rounded-full cursor-pointer transition-colors">
+    <input checked="" class="w-5 h-5 rounded border-primary text-primary focus:ring-primary" type="checkbox">
+    <span class="font-body-md">사회적 영향</span>
+    </label>
+    <label class="flex items-center gap-2 bg-white border-2 border-primary-container/30 px-4 py-2 rounded-full cursor-pointer transition-colors">
+    <input class="w-5 h-5 rounded border-primary text-primary focus:ring-primary" type="checkbox">
+    <span class="font-body-md">윤리적 고려</span>
+    </label>
+    <label class="flex items-center gap-2 bg-white border-2 border-primary-container/30 px-4 py-2 rounded-full cursor-pointer transition-colors">
+    <input class="w-5 h-5 rounded border-primary text-primary focus:ring-primary" type="checkbox">
+    <span class="font-body-md">미래 전망</span>
+    </label>
+    </div>
+    </div>
+    <div class="flex flex-col gap-2 max-w-xs">
+    <label class="font-label-bold text-label-bold text-on-surface-variant">HITL 피드백 루프 횟수</label>
+    <select class="w-full bg-surface-container-low border-2 border-outline-variant focus:border-primary rounded-lg px-4 py-3 font-body-md outline-none cursor-pointer">
+    <option value="1">1회 (빠른 진행)</option>
+    <option value="2">2회</option>
+    <option selected="" value="3">3회 (최적 품질)</option>
+    <option value="4">4회</option>
+    <option value="5">5회 (심층 피드백)</option>
+    </select>
+    <p class="text-xs text-on-surface-variant">인간 검토자가 개입하여 답변을 수정할 수 있는 최대 횟수입니다.</p>
+    </div>
+    </div>
+    </section>
+    <!-- Section 3: 학생 관리 -->
+    <section class="mb-lg p-md bg-surface-container-lowest rounded-lg shadow-sm border border-surface-container-high relative overflow-hidden">
+    <div class="absolute top-0 left-0 w-2 h-full bg-tertiary-container"></div>
+    <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-tertiary" data-icon="groups">groups</span>
+    <h2 class="font-headline-md text-headline-md">학습자 관리</h2>
+    </div>
+    <button class="flex items-center gap-2 bg-tertiary-fixed text-on-tertiary-fixed px-4 py-2 rounded-full hover:bg-tertiary-fixed-dim transition-colors font-label-bold">
+    <span class="material-symbols-outlined" data-icon="upload_file">upload_file</span>
+                        명단 CSV 업로드
+                    </button>
+    </div>
+    <div class="bg-surface-container-low rounded-lg p-4 mb-4">
+    <div class="flex items-center gap-3">
+    <input class="flex-1 bg-white border-2 border-outline-variant focus:border-primary rounded-lg px-4 py-2 font-body-md outline-none" placeholder="학습자 이름을 입력하세요 (예: 김철수)" type="text">
+    <button class="bg-primary text-on-primary px-6 py-2 rounded-lg font-label-bold active:scale-95 transition-transform">추가</button>
+    </div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+    <div class="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-outline-variant">
+    <span class="font-body-md">이하늘</span>
+    <span class="material-symbols-outlined text-error cursor-pointer text-sm" data-icon="close">close</span>
+    </div>
+    <div class="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-outline-variant">
+    <span class="font-body-md">박태양</span>
+    <span class="material-symbols-outlined text-error cursor-pointer text-sm" data-icon="close">close</span>
+    </div>
+    <div class="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-outline-variant">
+    <span class="font-body-md">최바람</span>
+    <span class="material-symbols-outlined text-error cursor-pointer text-sm" data-icon="close">close</span>
+    </div>
+    <div class="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-outline-variant">
+    <span class="font-body-md">장지열</span>
+    <span class="material-symbols-outlined text-error cursor-pointer text-sm" data-icon="close">close</span>
+    </div>
+    </div>
+    </section>
+    <!-- Bottom Action Cluster -->
+    <div class="flex flex-col md:flex-row gap-4 justify-end items-center">
+    <button class="w-full md:w-auto px-8 py-4 bg-white border-2 border-secondary text-secondary font-headline-md rounded-full hover:bg-secondary/5 transition-colors">
+                    설정 저장하기
+                </button>
+    <button class="w-full md:w-auto px-12 py-4 bg-primary text-on-primary font-headline-md rounded-full seed-button flex items-center justify-center gap-3">
+    <span class="material-symbols-outlined" data-icon="rocket_launch">rocket_launch</span>
+                    프롬프트 빌드 시작
+                </button>
+    </div>
+    </div>
+    <!-- Decorative Element: System Status -->
+    <div class="fixed bottom-8 right-8 hidden xl:block">
+    <div class="flex flex-col items-center">
+    <div class="w-16 h-16 bg-primary-container rounded-full flex items-center justify-center mb-2 animate-pulse shadow-lg">
+    <span class="material-symbols-outlined text-primary text-4xl filled-icon" data-icon="auto_awesome">auto_awesome</span>
+    </div>
+    <span class="font-label-bold text-primary">빌드 준비 완료</span>
+    </div>
+    </div>
+    </main>
+    <!-- BottomNavBar (Mobile Only) -->
+    <nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-4 pt-2 bg-surface-container-highest shadow-[0_-4px_10px_rgba(0,0,0,0.05)] rounded-t-lg">
+    <a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2 hover:bg-surface-container-high transition-colors active:scale-90 transition-transform" href="#">
+    <span class="material-symbols-outlined" data-icon="forum">forum</span>
+    <span class="font-label-bold text-label-bold">대화</span>
+    </a>
+    <a class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-xl px-6 py-1 active:scale-90 transition-transform duration-200" href="#">
+    <span class="material-symbols-outlined" data-icon="bolt">bolt</span>
+    <span class="font-label-bold text-label-bold">활성 빌드</span>
+    </a>
+    <a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2 hover:bg-surface-container-high transition-colors active:scale-90 transition-transform" href="#">
+    <span class="material-symbols-outlined" data-icon="help">help</span>
+    <span class="font-label-bold text-label-bold">지원</span>
+    </a>
+    </nav>
+    <script>
+        // Micro-interaction for checkbox effects
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const parent = e.target.closest('label');
+                if (e.target.checked) {
+                    parent.classList.add('border-primary-container');
+                    parent.classList.remove('border-transparent');
+                } else {
+                    parent.classList.remove('border-primary-container');
+                }
+            });
+        });
+    
+        console.log("HITL Prompt Builder Dashboard Initialized");
+    </script>
+    </body></html>
