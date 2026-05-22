@@ -318,20 +318,34 @@ export default function AppPage() {
 }
 
 function migrateSavedData(data: AppData): AppData {
+  const session = {
+    ...DEFAULT_SESSION,
+    ...data.session,
+    requiredElements: data.session.requiredElements ?? [],
+    constraints: data.session.constraints ?? [],
+    questionFlow: data.session.questionFlow ?? [],
+    revision: data.session.revision ?? 1,
+    updatedAt: data.session.updatedAt ?? new Date(0).toISOString()
+  };
+  const hasMatchingQuestionFlow = questionFlowMatchesTopic(session);
+
   return {
     ...data,
     session: {
-      ...DEFAULT_SESSION,
-      ...data.session,
-      requiredElements: data.session.requiredElements ?? [],
-      constraints: data.session.constraints ?? [],
-      questionFlow: data.session.questionFlow ?? [],
-      lessonDesigned: Boolean(data.session.lessonDesigned && data.session.questionFlow?.length),
-      revision: data.session.revision ?? 1,
-      updatedAt: data.session.updatedAt ?? new Date(0).toISOString()
+      ...session,
+      questionFlow: hasMatchingQuestionFlow ? session.questionFlow : [],
+      lessonDesigned: Boolean(session.lessonDesigned && session.questionFlow.length > 0 && hasMatchingQuestionFlow),
+      isActive: Boolean(session.isActive && session.lessonDesigned && hasMatchingQuestionFlow)
     },
     students: data.students ?? []
   };
+}
+
+function questionFlowMatchesTopic(session: SessionConfig) {
+  if (!session.questionFlow?.length) return false;
+  const topic = session.topic.trim();
+  const text = session.questionFlow.map((item) => item.question).join(" ");
+  return text.includes("{{topic}}") || Boolean(topic && text.includes(topic));
 }
 
 function buildStudentLink(accessCode: string) {

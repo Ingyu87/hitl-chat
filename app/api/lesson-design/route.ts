@@ -149,7 +149,7 @@ function normalizeQuestionFlow(questionFlow: LessonDesignQuestion[], config: Ses
   const fallback = new Map(buildDefaultQuestionFlow(config).map((item) => [item.stage, item]));
   const incoming = new Map((questionFlow || []).map((item) => [item.stage, item]));
 
-  return STAGE_ORDER.map((stage) => {
+  const normalized = STAGE_ORDER.map((stage) => {
     const item = incoming.get(stage);
     const fallbackItem = fallback.get(stage)!;
     return {
@@ -158,6 +158,15 @@ function normalizeQuestionFlow(questionFlow: LessonDesignQuestion[], config: Ses
       question: cleanQuestion(item?.question, config) || fallbackItem.question
     };
   });
+
+  if (!normalized.some((item) => item.question.includes("{{topic}}"))) {
+    normalized[0] = {
+      ...normalized[0],
+      question: `{{topic}}에 대해 이야기해볼게요. ${normalized[0].question}`
+    };
+  }
+
+  return normalized;
 }
 
 function normalizeList(items: string[] | undefined, fallback: string[]) {
