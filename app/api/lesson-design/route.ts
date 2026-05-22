@@ -42,9 +42,17 @@ export async function POST(request: Request) {
     const parsed = parseJsonObject<LessonDesignResult>(text, { questionFlow: body.config.questionFlow });
     const questionFlow = normalizeQuestionFlow(parsed.questionFlow, body.config);
 
-    return Response.json({ questionFlow });
-  } catch {
-    return Response.json({ questionFlow: body.config.questionFlow, fallbackReason: "lesson_design_failed" });
+    return Response.json({ questionFlow, aiUsed: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gemini lesson design failed";
+    return Response.json(
+      {
+        error: message,
+        aiUsed: false,
+        questionFlow: body.config.questionFlow
+      },
+      { status: 500 }
+    );
   }
 }
 

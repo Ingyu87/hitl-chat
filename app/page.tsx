@@ -38,6 +38,7 @@ type AppData = {
 type UiState = {
   view: View;
   isTeacherUnlocked: boolean;
+  isTeacherStudentPreview: boolean;
   pendingTeacherView: TeacherView;
   activeStudentId: string | null;
 };
@@ -56,6 +57,7 @@ const initialData: AppData = {
 const initialUi: UiState = {
   view: "home",
   isTeacherUnlocked: false,
+  isTeacherStudentPreview: false,
   pendingTeacherView: "teacher-settings",
   activeStudentId: null
 };
@@ -94,7 +96,7 @@ export default function AppPage() {
 
       const role = new URLSearchParams(window.location.search).get("role");
       if (role === "student" && !nextUi.activeStudentId) {
-        nextUi = { ...nextUi, view: "student-login" };
+        nextUi = { ...nextUi, view: "student-login", isTeacherStudentPreview: false };
       }
 
       if (nextUi.view === "student-chat" && !nextData.students.some((student) => student.id === nextUi.activeStudentId)) {
@@ -132,7 +134,7 @@ export default function AppPage() {
   }, [ui, isLoaded]);
 
   function setView(view: View) {
-    setUi((current) => ({ ...current, view }));
+    setUi((current) => ({ ...current, view, isTeacherStudentPreview: view === "student-login" || view === "student-chat" ? current.isTeacherStudentPreview : false }));
   }
 
   function updateSession(session: SessionConfig) {
@@ -186,17 +188,21 @@ export default function AppPage() {
 
   function openTeacherView(target: TeacherView) {
     if (ui.isTeacherUnlocked) {
-      setView(target);
+      setUi((current) => ({ ...current, view: target, isTeacherStudentPreview: false }));
       return;
     }
 
-    setUi((current) => ({ ...current, pendingTeacherView: target, view: "teacher-auth" }));
+    setUi((current) => ({ ...current, pendingTeacherView: target, view: "teacher-auth", isTeacherStudentPreview: false }));
   }
 
   function unlockTeacher(pin: string) {
     if (pin.trim() !== TEACHER_PIN) return false;
-    setUi((current) => ({ ...current, isTeacherUnlocked: true, view: current.pendingTeacherView }));
+    setUi((current) => ({ ...current, isTeacherUnlocked: true, view: current.pendingTeacherView, isTeacherStudentPreview: false }));
     return true;
+  }
+
+  function openStudentPreview() {
+    setUi((current) => ({ ...current, view: "student-login", isTeacherStudentPreview: true, activeStudentId: null }));
   }
 
   if (!isLoaded) {
@@ -211,8 +217,8 @@ export default function AppPage() {
 
   return (
     <main className="app-shell">
-      <TopBar view={ui.view} setView={setView} openTeacherView={openTeacherView} />
-      {ui.view === "home" && <HomeView session={data.session} setView={setView} openTeacherView={openTeacherView} resetDemo={resetDemo} />}
+      <TopBar view={ui.view} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} isTeacherStudentPreview={ui.isTeacherStudentPreview} />
+      {ui.view === "home" && <HomeView session={data.session} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} resetDemo={resetDemo} />}
       {ui.view === "student-login" && (
         <StudentLoginView
           session={data.session}
@@ -242,13 +248,26 @@ export default function AppPage() {
   );
 }
 
-function TopBar({ view, setView, openTeacherView }: { view: View; setView: (view: View) => void; openTeacherView: (view: TeacherView) => void }) {
+function TopBar({
+  view,
+  setView,
+  openTeacherView,
+  openStudentPreview,
+  isTeacherStudentPreview
+}: {
+  view: View;
+  setView: (view: View) => void;
+  openTeacherView: (view: TeacherView) => void;
+  openStudentPreview: () => void;
+  isTeacherStudentPreview: boolean;
+}) {
   const isStudentView = view === "student-login" || view === "student-chat";
+  const shouldHideTeacherNav = isStudentView && !isTeacherStudentPreview;
 
   return (
     <header className="sticky top-0 z-30 border-b border-line/80 bg-white/86 backdrop-blur">
       <div className="page-band flex min-h-16 items-center justify-between gap-4 py-3">
-        <button className="flex items-center gap-3 text-left" onClick={() => setView(isStudentView ? "student-login" : "home")} title="처음 화면">
+        <button type="button" className="flex items-center gap-3 text-left" onClick={() => setView(shouldHideTeacherNav ? "student-login" : "home")} title="처음 화면">
           <span className="grid h-11 w-11 place-items-center rounded-[8px] bg-primary text-white">
             <Bot size={24} />
           </span>
@@ -257,7 +276,7 @@ function TopBar({ view, setView, openTeacherView }: { view: View; setView: (view
             <span className="hidden text-sm font-semibold text-muted sm:block">{APP_SUBTITLE}</span>
           </span>
         </button>
-        {!isStudentView && (
+        {!shouldHideTeacherNav && (
           <nav className="flex items-center gap-2 overflow-x-auto">
             <NavButton active={view === "teacher-settings"} onClick={() => openTeacherView("teacher-settings")}>
               수업 설정
@@ -265,7 +284,7 @@ function TopBar({ view, setView, openTeacherView }: { view: View; setView: (view
             <NavButton active={view === "monitoring"} onClick={() => openTeacherView("monitoring")}>
               모니터링
             </NavButton>
-            <NavButton active={false} onClick={() => setView("student-login")}>
+            <NavButton active={isTeacherStudentPreview && isStudentView} onClick={openStudentPreview}>
               학생 입장 확인
             </NavButton>
           </nav>
@@ -275,7 +294,19 @@ function TopBar({ view, setView, openTeacherView }: { view: View; setView: (view
   );
 }
 
-function HomeView({ session, setView, openTeacherView, resetDemo }: { session: SessionConfig; setView: (view: View) => void; openTeacherView: (view: TeacherView) => void; resetDemo: () => void }) {
+function HomeView({
+  session,
+  setView,
+  openTeacherView,
+  openStudentPreview,
+  resetDemo
+}: {
+  session: SessionConfig;
+  setView: (view: View) => void;
+  openTeacherView: (view: TeacherView) => void;
+  openStudentPreview: () => void;
+  resetDemo: () => void;
+}) {
   const studentLink = typeof window === "undefined" ? "" : `${window.location.origin}?role=student`;
 
   return (
@@ -310,7 +341,7 @@ function HomeView({ session, setView, openTeacherView, resetDemo }: { session: S
             <SecondaryButton type="button" onClick={() => void copyText(studentLink)} icon={<KeyRound size={18} />}>
               학생 링크 복사
             </SecondaryButton>
-            <SecondaryButton type="button" onClick={() => setView("student-login")} icon={<LogIn size={18} />}>
+            <SecondaryButton type="button" onClick={openStudentPreview} icon={<LogIn size={18} />}>
               학생 화면 미리보기
             </SecondaryButton>
           </div>
@@ -372,7 +403,7 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
           <TextField label="접속 코드" value={code} onChange={(value) => setCode(value.toUpperCase())} placeholder="예: HITL35" />
         </div>
         {error && <p className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{error}</p>}
-        <PrimaryButton className="mt-6 w-full justify-center" icon={<LogIn size={18} />}>
+        <PrimaryButton type="submit" className="mt-6 w-full justify-center" icon={<LogIn size={18} />}>
           채팅 시작
         </PrimaryButton>
       </form>
@@ -540,7 +571,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
                 </>
               )}
             </div>
-            <PrimaryButton disabled={isSending || student.currentStage === "final"}>{student.currentStage === "final" ? "완료" : "보내기"}</PrimaryButton>
+            <PrimaryButton type="submit" disabled={isSending || student.currentStage === "final"}>{student.currentStage === "final" ? "완료" : "보내기"}</PrimaryButton>
           </div>
         </form>
       </div>
@@ -584,7 +615,7 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (pin: string) => boolean }) {
           <TextField label="교사용 PIN" value={pin} onChange={setPin} placeholder="교사용 PIN 입력" />
         </div>
         {error && <p className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{error}</p>}
-        <PrimaryButton className="mt-6 w-full justify-center" icon={<LogIn size={18} />}>
+        <PrimaryButton type="submit" className="mt-6 w-full justify-center" icon={<LogIn size={18} />}>
           교사 콘솔 열기
         </PrimaryButton>
       </form>
@@ -597,6 +628,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
   const [requiredText, setRequiredText] = useState(session.requiredElements.join(", "));
   const [constraintsText, setConstraintsText] = useState(session.constraints.join(", "));
   const [isDesigning, setIsDesigning] = useState(false);
+  const [designStatus, setDesignStatus] = useState("");
 
   function currentDraft() {
     return {
@@ -613,6 +645,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
 
   async function designQuestions(mode: "generate" | "refine") {
     setIsDesigning(true);
+    setDesignStatus(mode === "generate" ? "질문 단계를 만들고 있습니다." : "수업설계를 다듬고 있습니다.");
     try {
       const response = await fetch("/api/lesson-design", {
         method: "POST",
@@ -620,9 +653,18 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
         body: JSON.stringify({ config: currentDraft(), mode })
       });
       const result = await response.json();
+      if (!response.ok) {
+        setDesignStatus(`AI API 호출 실패: ${result.error ?? "Vercel 환경변수와 Gemini 키를 확인해 주세요."}`);
+        return;
+      }
       if (Array.isArray(result.questionFlow)) {
         setDraft((current) => ({ ...current, questionFlow: result.questionFlow }));
+        setDesignStatus(result.aiUsed ? "Gemini API로 수업설계를 반영했습니다." : "수업설계가 반영되었습니다.");
+      } else {
+        setDesignStatus("수업설계 결과를 가져오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
       }
+    } catch {
+      setDesignStatus("수업설계 요청 중 오류가 났습니다. 네트워크나 환경변수를 확인해 주세요.");
     } finally {
       setIsDesigning(false);
     }
@@ -641,11 +683,15 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
 
   function addQuestion() {
     const missing = STAGES.find((stage) => !draft.questionFlow.some((item) => item.stage === stage.stage));
-    if (!missing) return;
+    if (!missing) {
+      setDesignStatus("이미 모든 질문 단계가 들어 있습니다.");
+      return;
+    }
     setDraft((current) => ({
       ...current,
       questionFlow: [...current.questionFlow, { ...missing, question: "학생의 답변을 바탕으로 다음 생각을 물어보는 질문을 입력하세요." }]
     }));
+    setDesignStatus(`${missing.label} 단계를 추가했습니다.`);
   }
 
   return (
@@ -656,10 +702,16 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
             <p className="text-sm font-black text-primary">교사 설정</p>
             <h1 className="text-3xl font-black text-ink">수업 주제와 질문 흐름</h1>
           </div>
-          <PrimaryButton onClick={save} icon={<Save size={18} />}>
-            저장하고 모니터링
-          </PrimaryButton>
+          <div className="flex flex-wrap gap-2">
+            <SecondaryButton type="button" onClick={() => void designQuestions("refine")} disabled={isDesigning} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
+              AI로 수업설계 다듬기
+            </SecondaryButton>
+            <PrimaryButton onClick={save} icon={<Save size={18} />}>
+              저장하고 모니터링
+            </PrimaryButton>
+          </div>
         </div>
+        {designStatus && <p className="mt-4 rounded-[8px] bg-primarySoft px-3 py-2 text-sm font-bold text-primary">{designStatus}</p>}
         <div className="mt-6 grid gap-5">
           <div className="grid gap-4 md:grid-cols-2">
             <TextField label="수업 제목" value={draft.title} onChange={(value) => setDraft({ ...draft, title: value })} />
@@ -679,9 +731,6 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
               <div className="flex flex-wrap gap-2">
                 <SecondaryButton type="button" onClick={() => void designQuestions("generate")} disabled={isDesigning} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
                   AI로 질문 단계 만들기
-                </SecondaryButton>
-                <SecondaryButton type="button" onClick={() => void designQuestions("refine")} disabled={isDesigning} icon={<Sparkles size={16} />}>
-                  AI로 수업설계 다듬기
                 </SecondaryButton>
                 <SecondaryButton type="button" onClick={addQuestion} icon={<Plus size={16} />}>
                   단계 추가
@@ -1054,7 +1103,7 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
 
 function NavButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
   return (
-    <button className={`rounded-[8px] px-3 py-2 text-sm font-bold transition ${active ? "bg-primary text-white" : "bg-white text-muted hover:bg-primarySoft hover:text-primary"}`} onClick={onClick}>
+    <button type="button" className={`rounded-[8px] px-3 py-2 text-sm font-bold transition ${active ? "bg-primary text-white" : "bg-white text-muted hover:bg-primarySoft hover:text-primary"}`} onClick={onClick}>
       {children}
     </button>
   );
@@ -1087,27 +1136,27 @@ function NumberField({ label, value, min, max, onChange }: { label: string; valu
   );
 }
 
-function PrimaryButton({ children, icon, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
+function PrimaryButton({ children, icon, className = "", type = "button", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
   return (
-    <button className={`inline-flex items-center gap-2 rounded-[8px] bg-primary px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#005a2d] disabled:cursor-not-allowed disabled:opacity-50 ${className}`} {...props}>
+    <button type={type} className={`inline-flex items-center gap-2 rounded-[8px] bg-primary px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#005a2d] disabled:cursor-not-allowed disabled:opacity-50 ${className}`} {...props}>
       {icon}
       {children}
     </button>
   );
 }
 
-function SecondaryButton({ children, icon, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
+function SecondaryButton({ children, icon, className = "", type = "button", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
   return (
-    <button className={`inline-flex items-center gap-2 rounded-[8px] border border-primary/25 bg-primarySoft px-4 py-3 text-sm font-black text-primary transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-50 ${className}`} {...props}>
+    <button type={type} className={`inline-flex items-center gap-2 rounded-[8px] border border-primary/25 bg-primarySoft px-4 py-3 text-sm font-black text-primary transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-50 ${className}`} {...props}>
       {icon}
       {children}
     </button>
   );
 }
 
-function GhostButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function GhostButton({ children, className = "", type = "button", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button className={`rounded-[8px] px-4 py-3 text-sm font-black text-muted transition hover:bg-white hover:text-ink ${className}`} {...props}>
+    <button type={type} className={`rounded-[8px] px-4 py-3 text-sm font-black text-muted transition hover:bg-white hover:text-ink ${className}`} {...props}>
       {children}
     </button>
   );
