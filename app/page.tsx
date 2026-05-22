@@ -54,6 +54,9 @@ const initialData: AppData = {
   students: []
 };
 
+const LEGACY_DEFAULT_TOPIC = "기후 위기를 줄이는 미래 도시";
+const LEGACY_DEFAULT_QUESTION_START = `오늘 주제는 "${LEGACY_DEFAULT_TOPIC}"`;
+
 const initialUi: UiState = {
   view: "home",
   isTeacherUnlocked: false,
@@ -93,6 +96,8 @@ export default function AppPage() {
       if (remoteData?.session && remoteData?.students) {
         nextData = remoteData;
       }
+
+      nextData = migrateSavedData(nextData);
 
       const role = new URLSearchParams(window.location.search).get("role");
       if (role === "student") {
@@ -257,6 +262,25 @@ export default function AppPage() {
       )}
     </main>
   );
+}
+
+function migrateSavedData(data: AppData): AppData {
+  const questionFlow = data.session.questionFlow ?? [];
+  const looksLikeLegacyDefault =
+    data.session.topic === LEGACY_DEFAULT_TOPIC &&
+    questionFlow.some((item) => item.stage === "orient" && item.question.startsWith(LEGACY_DEFAULT_QUESTION_START));
+
+  if (!looksLikeLegacyDefault) return data;
+
+  return {
+    ...data,
+    session: {
+      ...data.session,
+      requiredElements: [],
+      constraints: [],
+      questionFlow: []
+    }
+  };
 }
 
 function TopBar({
