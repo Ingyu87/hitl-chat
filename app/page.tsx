@@ -852,6 +852,11 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
               if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
                 addPasteAlert("keyboard paste");
                 event.preventDefault();
+                return;
+              }
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void sendMessage();
               }
             }}
             onContextMenu={(event) => event.preventDefault()}
