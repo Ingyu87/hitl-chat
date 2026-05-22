@@ -28,7 +28,12 @@ export async function maybeAssistWithAi(args: {
       maxOutputTokens: args.purpose === "question_polish" ? 900 : 1400
     });
 
-    return { text: text.trim(), used: true };
+    const trimmed = text.trim();
+    if (args.purpose === "question_polish" && !isCompleteStudentQuestion(trimmed)) {
+      return { text: args.baseText, used: false, fallbackReason: "incomplete_question" };
+    }
+
+    return { text: trimmed, used: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "provider_error";
     return { text: args.baseText, used: false, fallbackReason: message };
@@ -61,7 +66,9 @@ function buildAssistPrompt(args: {
       "- 이미지 프롬프트에 필요한 요소를 빠뜨리지 않게 대화한다: 장소, 주요 대상, 행동, 문제/해결, 분위기, 색감, 구도, 시점, 화풍/스타일.",
       "- 특히 describe 단계에서는 화풍/스타일, 색감, 카메라 시점, 구도를 반드시 물어본다.",
       "- 답변은 2~4문장 이내로 짧고 친근하게 쓴다.",
-      "- 최종 출력은 학생에게 보낼 챗봇 메시지 1개만 작성한다.",
+      "- 최종 출력은 학생에게 보낼 완성된 챗봇 메시지 1개만 작성한다.",
+      "- 반드시 물음표, '말해 주세요.', '골라도 좋아요.'처럼 학생이 답할 수 있는 완결 문장으로 끝낸다.",
+      "- 문장 중간에서 끊긴 표현이나 교사용 지시문은 절대 출력하지 않는다.",
       "",
       `수업 주제: ${args.config.topic}`,
       `학습 목표: ${args.config.learningGoal}`,
@@ -105,4 +112,14 @@ function buildAssistPrompt(args: {
     "규칙 기반 초안:",
     args.baseText
   ].join("\n");
+}
+
+function isCompleteStudentQuestion(text: string) {
+  const value = text.trim();
+  if (value.length < 12) return false;
+  if (!/[?？.]$|요$|다$/.test(value)) return false;
+  if (!/[?？]|말해 주세요|골라도 좋아요|생각해|알려줘|선택해/.test(value)) return false;
+  if (/(을|를|이|가|은|는|의|와|과|로|으로|보여|넣고|바탕으로)$/.test(value)) return false;
+  if (/^(학생에게|챗봇은|교사는|질문한다|안내한다)/.test(value)) return false;
+  return true;
 }

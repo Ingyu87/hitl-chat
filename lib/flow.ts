@@ -1,9 +1,9 @@
 import { buildDraftPrompt, revisePrompt } from "@/lib/prompt-builder";
-import { getQuestionForStage, STAGE_ORDER } from "@/lib/question-flow";
+import { getNextQuestionStage, getQuestionForStage } from "@/lib/question-flow";
 import type { ChatMessage, FlowResult, SessionConfig, Stage } from "@/lib/types";
 
 export function getInitialAssistantMessage(config: SessionConfig): string {
-  return `안녕하세요! 오늘은 "${config.topic}" 주제로 이미지 프롬프트를 함께 만들어볼게요. 이 주제를 들었을 때 가장 먼저 떠오르는 장면이나 생각은 무엇인가요?`;
+  return getQuestionForStage(config, config.questionFlow[0]?.stage || "orient");
 }
 
 export function getNextFlow(args: {
@@ -66,20 +66,23 @@ export function getNextFlow(args: {
     };
   }
 
-  const nextStage = nextOf(currentStage);
+  const nextStage = getNextQuestionStage(config, currentStage);
+  if (nextStage === "draft") {
+    return {
+      nextStage: "draft",
+      assistantMessage: getQuestionForStage(config, "draft"),
+      shouldCreatePrompt: false
+    };
+  }
+
   return {
     nextStage,
     assistantMessage: getQuestionForStage(config, nextStage),
     shouldCreatePrompt: false,
-    aiPurpose: ["orient", "explore", "concrete", "describe"].includes(nextStage) ? "question_polish" : undefined
+    aiPurpose: "question_polish"
   };
 }
 
-function nextOf(stage: Stage): Stage {
-  const index = STAGE_ORDER.indexOf(stage);
-  return STAGE_ORDER[Math.min(index + 1, STAGE_ORDER.length - 1)];
-}
-
 function isFinalApproval(input: string): boolean {
-  return /(확정|좋아요|좋아|그대로|완성|최종|오케이|ok|OK|yes|네|응|이대로)/.test(input.replace(/\s/g, ""));
+  return /(확정|좋아|그대로|완성|최종|ok|OK|yes|응|네|이대로)/.test(input.replace(/\s/g, ""));
 }

@@ -1,4 +1,4 @@
-export type Stage = "orient" | "explore" | "concrete" | "describe" | "draft" | "revise" | "final";
+export type Stage = string;
 
 export type AiPurpose = "question_polish" | "draft_prompt" | "revise_prompt" | "safety_check" | "teacher_analysis";
 
@@ -12,7 +12,7 @@ export type SessionConfig = {
   outputType: string;
   requiredElements: string[];
   constraints: string[];
-  questionFlow: { stage: Stage; label: string; question: string }[];
+  questionFlow: LessonQuestion[];
   lessonDesigned?: boolean;
   maxLoopCount: number;
   aiEnabled: boolean;
@@ -23,6 +23,19 @@ export type SessionConfig = {
   isActive: boolean;
   revision?: number;
   updatedAt?: string;
+};
+
+export type QuestionChoice = {
+  label: string;
+  value: string;
+  description?: string;
+};
+
+export type LessonQuestion = {
+  stage: Stage;
+  label: string;
+  question: string;
+  choices?: QuestionChoice[];
 };
 
 export type ChatMessage = {

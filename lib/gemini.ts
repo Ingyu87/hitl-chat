@@ -27,7 +27,16 @@ export async function callGeminiText(prompt: string, options?: { temperature?: n
   }
 
   const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  const candidate = data?.candidates?.[0];
+  const finishReason = candidate?.finishReason;
+  if (finishReason && !["STOP", "MAX_TOKENS"].includes(finishReason)) {
+    throw new Error(`Gemini stopped unexpectedly: ${finishReason}`);
+  }
+  if (finishReason === "MAX_TOKENS") {
+    throw new Error("Gemini response was cut off by the token limit.");
+  }
+
+  const text = candidate?.content?.parts?.[0]?.text?.trim();
   if (!text) {
     throw new Error("Gemini returned empty text");
   }

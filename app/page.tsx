@@ -26,7 +26,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
-import { buildDefaultQuestionFlow, injectTopic } from "@/lib/question-flow";
+import { buildDefaultQuestionFlow, getChoicesForStage, getQuestionIndex, getQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
 import { clearStudentRows, deleteStudentRow, getCurrentTeacher, loadStudentsForSession, loadTeacherData, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
@@ -346,10 +346,7 @@ function migrateSavedData(data: AppData): AppData {
 }
 
 function questionFlowMatchesTopic(session: SessionConfig) {
-  if (!session.questionFlow?.length) return false;
-  const topic = session.topic.trim();
-  const text = session.questionFlow.map((item) => item.question).join(" ");
-  return text.includes("{{topic}}") || Boolean(topic && text.includes(topic));
+  return Boolean(session.questionFlow?.length);
 }
 
 function buildStudentLink(accessCode: string) {
@@ -365,7 +362,16 @@ function previewQuestion(question: string, session: SessionConfig) {
 }
 
 function getTeacherUnlockCode(session: SessionConfig) {
-  return `${session.accessCode}-OK`;
+  const seed = `${session.id || ""}${session.accessCode || ""}`;
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) % 9000;
+  }
+  return String(1000 + hash).padStart(4, "0");
+}
+
+function isLockingAlert(alertType: SafetyAlert["alertType"]) {
+  return ["paste_attempt", "profanity", "sexual", "abusive"].includes(alertType);
 }
 
 function getLastTeacherUnlockTime(student: StudentWorkspace) {
@@ -379,7 +385,7 @@ function getLastTeacherUnlockTime(student: StudentWorkspace) {
 
 function getActiveSafetyAlerts(student: StudentWorkspace) {
   const unlockedAt = getLastTeacherUnlockTime(student);
-  return student.safetyAlerts.filter((alert) => (Date.parse(alert.createdAt) || 0) > unlockedAt);
+  return student.safetyAlerts.filter((alert) => isLockingAlert(alert.alertType) && (Date.parse(alert.createdAt) || 0) > unlockedAt);
 }
 
 function isStudentLocked(student: StudentWorkspace) {
@@ -512,9 +518,6 @@ function HomeView({
             <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<KeyRound size={18} />}>
               학생 링크 복사
             </SecondaryButton>
-            <SecondaryButton type="button" onClick={openStudentPreview} icon={<LogIn size={18} />}>
-              교사용 학생 미리보기
-            </SecondaryButton>
           </div>
         </InfoPanel>
       </div>
@@ -630,9 +633,10 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestPrompt = student.prompts.at(-1);
   const finalPrompt = student.prompts.find((prompt) => prompt.isFinal);
-  const stageIndex = STAGES.findIndex((stage) => stage.stage === student.currentStage);
+  const stageIndex = getQuestionIndex(session, student.currentStage);
   const activeSafetyAlerts = getActiveSafetyAlerts(student);
   const isLocked = activeSafetyAlerts.length >= 3;
+  const currentChoices = getChoicesForStage(session, student.currentStage);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -748,6 +752,18 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         }
       }
 
+      if (result.clarification) {
+        nextMessages.push(result.assistantMessage);
+        onChange({
+          ...student,
+          messages: nextMessages,
+          safetyAlerts: nextSafetyAlerts,
+          aiLogs: result.aiLog ? [...student.aiLogs, result.aiLog as AiAssistLog] : student.aiLogs,
+          lastActiveAt: now
+        });
+        return;
+      }
+
       const prompts = [...student.prompts];
       if (result.shouldCreatePrompt && result.draftPrompt) {
         prompts.push({
@@ -790,16 +806,16 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
                 <ShieldCheck size={22} />
               </span>
               <div>
-                <h2 className="text-xl font-black text-ink">활동이 잠겼습니다</h2>
+                <h2 className="text-xl font-black text-ink">안전 확인이 필요해요</h2>
                 <p className="mt-2 text-sm font-semibold leading-6 text-muted">
-                  문제 발언 또는 부적절한 답변 경고가 3회 누적되어 담임선생님께 보고되었습니다. 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.
+                  안전 확인이 필요한 입력이 3회 누적되었습니다. 선생님이 숫자 4자리 해제 코드를 입력하면 다시 진행할 수 있습니다.
                 </p>
               </div>
             </div>
             <div className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">
-              누적 경고 {activeSafetyAlerts.length}건
+              안전 경고 {activeSafetyAlerts.length}건
             </div>
-            <TextField label="교사 해제 코드" value={unlockCode} onChange={setUnlockCode} placeholder="선생님이 입력" type="password" />
+            <TextField label="교사 해제 코드" value={unlockCode} onChange={setUnlockCode} placeholder="숫자 4자리" type="password" />
             {unlockError && <p className="mt-3 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{unlockError}</p>}
             <PrimaryButton type="submit" className="mt-4 w-full justify-center" icon={<ShieldCheck size={18} />}>
               잠금 해제
@@ -815,13 +831,13 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
               <h1 className="text-2xl font-black text-ink">{student.name}의 프롬프트 대화</h1>
             </div>
             <div className="flex flex-wrap gap-2">
-              <span className="rounded-[8px] bg-secondarySoft px-3 py-2 text-sm font-black text-secondary">{STAGES[Math.max(stageIndex, 0)]?.label ?? "진행 중"}</span>
+              <span className="rounded-[8px] bg-secondarySoft px-3 py-2 text-sm font-black text-secondary">{getQuestionFlow(session)[Math.max(stageIndex, 0)]?.label ?? "진행 중"}</span>
               <SecondaryButton type="button" onClick={onReset} icon={<RotateCcw size={16} />}>
                 처음부터 진행
               </SecondaryButton>
             </div>
           </div>
-          <StageProgress currentStage={student.currentStage} />
+          <StageProgress session={session} currentStage={student.currentStage} />
         </div>
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {student.messages.map((message) => (
@@ -840,6 +856,23 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             void sendMessage();
           }}
         >
+          {currentChoices.length > 0 && student.currentStage !== "final" && !isLocked && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {currentChoices.map((choice) => (
+                <button
+                  key={`${choice.label}-${choice.value}`}
+                  type="button"
+                  className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-left text-sm font-black text-ink hover:border-primary hover:bg-primarySoft"
+                  onClick={() => void sendMessage(choice.value)}
+                  title={choice.description}
+                  disabled={isSending}
+                >
+                  <span className="block">{choice.label}</span>
+                  {choice.description && <span className="mt-1 block text-xs font-semibold leading-5 text-muted">{choice.description}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           <textarea
             className="focus-ring h-20 w-full resize-none rounded-[8px] border border-line bg-surface p-3 font-semibold leading-7 text-ink"
             value={input}
@@ -901,12 +934,23 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (email: string, password: str
   const [pin, setPin] = useState("");
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    setNotice("");
+    const trimmedEmail = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("올바른 교사 이메일을 입력해 주세요.");
+      return;
+    }
+    if (pin.length < 6) {
+      setError("비밀번호는 6자 이상이어야 합니다.");
+      return;
+    }
     try {
-      const ok = await onUnlock(email, pin, mode);
+      const ok = await onUnlock(trimmedEmail, pin, mode);
       if (!ok) {
         setError("이메일 또는 비밀번호를 확인해주세요.");
         setPin("");
@@ -938,8 +982,9 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (email: string, password: str
           </div>
         </div>
         {error && <p className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{error}</p>}
+        {notice && <p className="mt-4 rounded-[8px] bg-primarySoft px-3 py-2 text-sm font-bold text-primary">{notice}</p>}
         <PrimaryButton type="submit" className="mt-6 w-full justify-center" icon={<LogIn size={18} />}>
-          {mode === "sign-up" ? "회원가입" : "로그인"}
+          {mode === "sign-up" ? "회원가입하기" : "로그인하기"}
         </PrimaryButton>
       </form>
     </section>
@@ -1041,17 +1086,23 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
   }
 
   function addQuestion() {
-    const missing = STAGES.find((stage) => !draft.questionFlow.some((item) => item.stage === stage.stage));
-    if (!missing) {
-      setDesignStatus("이미 모든 질문 단계가 들어 있습니다.");
+    if (draft.questionFlow.length >= MAX_QUESTION_COUNT) {
+      setDesignStatus(`질문은 최대 ${MAX_QUESTION_COUNT}개까지 추가할 수 있습니다.`);
       return;
     }
+    const nextNumber = draft.questionFlow.length + 1;
+    const nextQuestion = {
+      stage: `question-${nextNumber}`,
+      label: `질문 ${nextNumber}`,
+      question: "학생의 답변을 바탕으로 다음 생각을 물어보는 질문을 입력하세요.",
+      choices: []
+    };
     setDraft((current) => ({
       ...current,
       lessonDesigned: true,
-      questionFlow: [...current.questionFlow, { ...missing, question: "학생의 답변을 바탕으로 다음 생각을 물어보는 질문을 입력하세요." }]
+      questionFlow: [...current.questionFlow, nextQuestion]
     }));
-    setDesignStatus(`${missing.label} 단계를 추가했습니다.`);
+    setDesignStatus(`${nextQuestion.label}을 추가했습니다. 최대 ${MAX_QUESTION_COUNT}개까지 가능합니다.`);
   }
 
   function applyDefaultFlow() {
@@ -1512,11 +1563,12 @@ function EmptyStudentState({ setView }: { setView: (view: View) => void }) {
   );
 }
 
-function StageProgress({ currentStage }: { currentStage: string }) {
-  const currentIndex = STAGES.findIndex((item) => item.stage === currentStage);
+function StageProgress({ session, currentStage }: { session: SessionConfig; currentStage: string }) {
+  const stages = getQuestionFlow(session);
+  const currentIndex = Math.max(0, stages.findIndex((item) => item.stage === currentStage));
   return (
-    <div className="mt-4 grid grid-cols-7 gap-2">
-      {STAGES.map((item, index) => (
+    <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(stages.length || 1, 10)}, minmax(0, 1fr))` }}>
+      {stages.map((item, index) => (
         <div key={item.stage} className="min-w-0">
           <div className={`h-2 rounded-full ${index <= currentIndex ? "bg-primary" : "bg-line"}`} />
           <p className={`mt-1 truncate text-xs font-black ${index <= currentIndex ? "text-primary" : "text-muted"}`}>{item.label}</p>

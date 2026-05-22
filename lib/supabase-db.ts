@@ -56,17 +56,28 @@ export async function getCurrentTeacher() {
 }
 
 export async function signInTeacher(email: string, password: string) {
-  if (!supabaseBrowser) throw new Error("Supabase is not configured.");
+  if (!supabaseBrowser) throw new Error("Supabase 환경변수가 설정되지 않았습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_ANON_KEY를 확인해 주세요.");
   const { data, error } = await supabaseBrowser.auth.signInWithPassword({ email, password });
-  if (error) throw error;
+  if (error) throw new Error(toAuthMessage(error.message));
   return data.user;
 }
 
 export async function signUpTeacher(email: string, password: string) {
-  if (!supabaseBrowser) throw new Error("Supabase is not configured.");
+  if (!supabaseBrowser) throw new Error("Supabase 환경변수가 설정되지 않았습니다. NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_ANON_KEY를 확인해 주세요.");
   const { data, error } = await supabaseBrowser.auth.signUp({ email, password });
-  if (error) throw error;
+  if (error) throw new Error(toAuthMessage(error.message));
+  if (!data.session) return null;
   return data.user;
+}
+
+function toAuthMessage(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("already registered") || normalized.includes("already exists")) return "이미 가입된 이메일입니다. 로그인해 주세요.";
+  if (normalized.includes("password")) return "비밀번호가 너무 약하거나 형식이 맞지 않습니다. 6자 이상으로 입력해 주세요.";
+  if (normalized.includes("invalid email")) return "올바른 이메일 주소를 입력해 주세요.";
+  if (normalized.includes("email not confirmed")) return "이메일 인증이 필요합니다. 메일함을 확인한 뒤 로그인해 주세요.";
+  if (normalized.includes("invalid login credentials")) return "이메일 또는 비밀번호를 확인해 주세요.";
+  return message || "인증 처리 중 오류가 발생했습니다.";
 }
 
 export async function signOutTeacher() {
