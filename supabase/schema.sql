@@ -73,3 +73,27 @@ create table if not exists ai_assist_logs (
   fallback_reason text,
   created_at timestamptz not null default now()
 );
+
+create table if not exists app_state (
+  id text primary key default 'main',
+  state jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table app_state enable row level security;
+
+drop policy if exists "Allow public app state read" on app_state;
+drop policy if exists "Allow public app state write" on app_state;
+
+create policy "Allow public app state read"
+  on app_state
+  for select
+  to anon, authenticated
+  using (true);
+
+create policy "Allow public app state write"
+  on app_state
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);

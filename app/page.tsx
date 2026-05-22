@@ -23,6 +23,7 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
+import { loadAppState, saveAppState } from "@/lib/supabase-state";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-login" | "teacher-settings" | "monitoring";
@@ -42,23 +43,49 @@ const initialState: AppState = {
 export default function AppPage() {
   const [view, setView] = useState<View>("home");
   const [state, setState] = useState<AppState>(initialState);
+  const [isStateLoaded, setIsStateLoaded] = useState(false);
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const activeStudent = state.students.find((student) => student.id === activeStudentId) ?? null;
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    let isCancelled = false;
+
+    async function loadState() {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      let nextState = initialState;
+
       try {
-        setState(JSON.parse(saved) as AppState);
+        if (saved) nextState = JSON.parse(saved) as AppState;
       } catch {
-        setState(initialState);
+        nextState = initialState;
+      }
+
+      const remoteState = await loadAppState<AppState>();
+      if (remoteState) nextState = remoteState;
+
+      if (!isCancelled) {
+        setState(nextState);
+        setIsStateLoaded(true);
       }
     }
+
+    loadState();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   useEffect(() => {
+    if (!isStateLoaded) return;
+
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+    const saveTimer = window.setTimeout(() => {
+      void saveAppState(state);
+    }, 500);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [state, isStateLoaded]);
 
   function updateSession(session: SessionConfig) {
     setState((current) => ({ ...current, session }));

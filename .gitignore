@@ -12,3 +12,7 @@ pnpm-debug.log*
 dev.log
 dev.err.log
 *.tsbuildinfo
+*비번*.txt
+*password*.txt
+*secret*.txt
+*credentials*.txt
