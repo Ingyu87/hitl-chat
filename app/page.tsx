@@ -644,6 +644,10 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
   function currentDraft() {
     return {
       ...draft,
+      title: draft.topic,
+      learningGoal: DEFAULT_SESSION.learningGoal,
+      maxLoopCount: DEFAULT_SESSION.maxLoopCount,
+      aiEnabled: true,
       requiredElements: splitList(requiredText),
       constraints: splitList(constraintsText)
     };
@@ -656,7 +660,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
 
   async function designQuestions(mode: "generate" | "refine") {
     setIsDesigning(true);
-    setDesignStatus(mode === "generate" ? "질문 단계를 만들고 있습니다." : "수업설계를 다듬고 있습니다.");
+    setDesignStatus(mode === "generate" ? "수업 주제에 맞는 질문 단계와 필수 요소를 설계하고 있습니다." : "현재 수업 설계를 다듬고 있습니다.");
     try {
       const response = await fetch("/api/lesson-design", {
         method: "POST",
@@ -670,6 +674,8 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       }
       if (Array.isArray(result.questionFlow)) {
         setDraft((current) => ({ ...current, questionFlow: result.questionFlow }));
+        if (Array.isArray(result.requiredElements)) setRequiredText(result.requiredElements.join(", "));
+        if (Array.isArray(result.constraints)) setConstraintsText(result.constraints.join(", "));
         setDesignStatus(result.aiUsed ? "Gemini API로 수업설계를 반영했습니다." : "수업설계가 반영되었습니다.");
       } else {
         setDesignStatus("수업설계 결과를 가져오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
@@ -714,8 +720,8 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
             <h1 className="text-3xl font-black text-ink">수업 주제와 질문 흐름</h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <SecondaryButton type="button" onClick={() => void designQuestions("refine")} disabled={isDesigning} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
-              AI로 수업설계 다듬기
+            <SecondaryButton type="button" onClick={() => void designQuestions("generate")} disabled={isDesigning || !draft.topic.trim()} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
+              AI로 수업 설계
             </SecondaryButton>
             <PrimaryButton onClick={save} icon={<Save size={18} />}>
               저장하고 모니터링
@@ -724,15 +730,10 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
         </div>
         {designStatus && <p className="mt-4 rounded-[8px] bg-primarySoft px-3 py-2 text-sm font-bold text-primary">{designStatus}</p>}
         <div className="mt-6 grid gap-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <TextField label="수업 제목" value={draft.title} onChange={(value) => setDraft({ ...draft, title: value })} />
-            <TextField label="학생 접속 코드" value={draft.accessCode} onChange={(value) => setDraft({ ...draft, accessCode: value.toUpperCase() })} />
-          </div>
           <TextField label="수업 주제" value={draft.topic} onChange={(value) => setDraft({ ...draft, topic: value })} />
-          <TextArea label="학습 목표" value={draft.learningGoal} onChange={(value) => setDraft({ ...draft, learningGoal: value })} />
           <div className="grid gap-4 md:grid-cols-2">
+            <TextField label="학생 접속 코드" value={draft.accessCode} onChange={(value) => setDraft({ ...draft, accessCode: value.toUpperCase() })} />
             <TextField label="최종 산출물 유형" value={draft.outputType} onChange={(value) => setDraft({ ...draft, outputType: value })} />
-            <NumberField label="최대 수정 루프 수" value={draft.maxLoopCount} min={1} max={5} onChange={(value) => setDraft({ ...draft, maxLoopCount: value })} />
           </div>
           <TextArea label="필수 포함 요소" value={requiredText} onChange={setRequiredText} placeholder="쉼표로 구분: 장소, 주요 대상, 문제 해결 방법" />
           <TextArea label="금지/주의 요소" value={constraintsText} onChange={setConstraintsText} placeholder="쉼표로 구분: 주제 이탈 금지, 혐오 표현 금지" />
@@ -740,8 +741,8 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-black text-ink">질문 단계</h2>
               <div className="flex flex-wrap gap-2">
-                <SecondaryButton type="button" onClick={() => void designQuestions("generate")} disabled={isDesigning} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
-                  AI로 질문 단계 만들기
+                <SecondaryButton type="button" onClick={() => void designQuestions("refine")} disabled={isDesigning || !draft.topic.trim()} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
+                  AI로 현재 설계 다듬기
                 </SecondaryButton>
                 <SecondaryButton type="button" onClick={addQuestion} icon={<Plus size={16} />}>
                   단계 추가

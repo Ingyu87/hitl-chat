@@ -12,7 +12,7 @@ export const STAGES: { stage: Stage; label: string }[] = [
 
 export const DEFAULT_SESSION: SessionConfig = {
   id: "session-demo",
-  title: "생각잇기 프롬프트",
+  title: "기후 위기를 줄이는 미래 도시",
   topic: "기후 위기를 줄이는 미래 도시",
   learningGoal: "학생이 주제에 맞는 아이디어를 구체화하고, 생성형 AI에 넣을 수 있는 명확한 프롬프트를 완성한다.",
   outputType: "이미지 생성 프롬프트",
@@ -56,7 +56,7 @@ export const DEFAULT_SESSION: SessionConfig = {
     }
   ],
   maxLoopCount: 3,
-  aiEnabled: false,
+  aiEnabled: true,
   aiProvider: "gemini",
   aiUsagePolicy: "questions_and_prompts",
   aiCallsPerStudentLimit: 8,
