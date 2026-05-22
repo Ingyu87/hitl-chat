@@ -1,6 +1,6 @@
 export type Stage = "orient" | "explore" | "concrete" | "describe" | "draft" | "revise" | "final";
 
-export type AiPurpose = "question_polish" | "draft_prompt" | "revise_prompt";
+export type AiPurpose = "question_polish" | "draft_prompt" | "revise_prompt" | "safety_check" | "teacher_analysis";
 
 export type PromptSource = "rule" | "ai_assisted" | "student_revision";
 
@@ -44,7 +44,18 @@ export type SafetyAlert = {
   id: string;
   alertType: "paste_attempt" | "profanity" | "off_topic" | "meaningless";
   attemptedContent: string;
+  reason?: string;
   isRead: boolean;
+  createdAt: string;
+};
+
+export type StudentAnalysis = {
+  summary: string;
+  conceptUnderstanding: string;
+  strengths: string[];
+  misconceptions: string[];
+  teacherRecommendations: string[];
+  nextQuestions: string[];
   createdAt: string;
 };
 
@@ -68,6 +79,7 @@ export type StudentWorkspace = {
   prompts: PromptRecord[];
   safetyAlerts: SafetyAlert[];
   aiLogs: AiAssistLog[];
+  analysis?: StudentAnalysis;
 };
 
 export type FlowResult = {

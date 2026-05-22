@@ -1,4 +1,4 @@
-import { callGemini } from "@/lib/gemini";
+import { callGeminiText } from "@/lib/gemini";
 import type { AiAssistResult, AiPurpose, ChatMessage, SessionConfig, Stage } from "@/lib/types";
 
 export async function maybeAssistWithAi(args: {
@@ -28,7 +28,16 @@ export async function maybeAssistWithAi(args: {
   }
 
   try {
-    const text = await callGemini({ ...args, purpose });
+    const text = await callGeminiText([
+      "너는 학생 답변 기반 프롬프트 수업 보조 AI다.",
+      "학생 답변을 대신 작성하지 않는다.",
+      `목적: ${purpose}`,
+      `현재 단계: ${args.stage}`,
+      `기준 문장:\n${args.baseText}`,
+      "학생 답변 기록:",
+      args.history.filter((message) => message.role === "user").map((message) => `- ${message.content}`).join("\n") || "- 아직 없음",
+      "결과만 한국어로 출력해."
+    ].join("\n\n"));
     return { text, used: true };
   } catch {
     return { text: args.baseText, used: false, fallbackReason: "provider_error" };

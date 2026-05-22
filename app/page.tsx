@@ -4,77 +4,107 @@ import {
   AlertTriangle,
   Bot,
   Check,
-  ChevronRight,
   ClipboardList,
+  Copy,
   Download,
-  Gauge,
   KeyRound,
   Loader2,
   LogIn,
-  MessageSquareText,
   Monitor,
-  PenLine,
+  Plus,
+  RotateCcw,
   Save,
   Settings,
   ShieldCheck,
   Sparkles,
-  UserRound
+  Trash2,
+  UserRound,
+  X
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { loadAppState, saveAppState } from "@/lib/supabase-state";
-import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, StudentWorkspace } from "@/lib/types";
+import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
 type TeacherView = "teacher-settings" | "monitoring";
 
-const STORAGE_KEY = "hitl-chat-state-v1";
-const APP_NAME = "생각잇기 프롬프트";
-const APP_SUBTITLE = "학생 답변 기반 AI 프롬프트 수업 도구";
-const TEACHER_PIN = process.env.NEXT_PUBLIC_TEACHER_PIN ?? "1234";
-
-type AppState = {
+type AppData = {
   session: SessionConfig;
   students: StudentWorkspace[];
 };
 
-const initialState: AppState = {
+type UiState = {
+  view: View;
+  isTeacherUnlocked: boolean;
+  pendingTeacherView: TeacherView;
+  activeStudentId: string | null;
+};
+
+const DATA_STORAGE_KEY = "hitl-chat-state-v2";
+const UI_STORAGE_KEY = "hitl-chat-ui-v2";
+const APP_NAME = "생각잇기 프롬프트";
+const APP_SUBTITLE = "학생 답변 기반 이미지 생성 프롬프트 수업 도구";
+const TEACHER_PIN = process.env.NEXT_PUBLIC_TEACHER_PIN ?? "1234";
+
+const initialData: AppData = {
   session: DEFAULT_SESSION,
   students: []
 };
 
+const initialUi: UiState = {
+  view: "home",
+  isTeacherUnlocked: false,
+  pendingTeacherView: "teacher-settings",
+  activeStudentId: null
+};
+
 export default function AppPage() {
-  const [view, setView] = useState<View>("home");
-  const [state, setState] = useState<AppState>(initialState);
-  const [isStateLoaded, setIsStateLoaded] = useState(false);
-  const [isTeacherUnlocked, setIsTeacherUnlocked] = useState(false);
-  const [pendingTeacherView, setPendingTeacherView] = useState<TeacherView>("teacher-settings");
-  const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
-  const activeStudent = state.students.find((student) => student.id === activeStudentId) ?? null;
+  const [data, setData] = useState<AppData>(initialData);
+  const [ui, setUi] = useState<UiState>(initialUi);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const activeStudent = data.students.find((student) => student.id === ui.activeStudentId) ?? null;
 
   useEffect(() => {
     let isCancelled = false;
 
     async function loadState() {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      let nextState = initialState;
+      let nextData = initialData;
+      let nextUi = initialUi;
 
       try {
-        if (saved) nextState = JSON.parse(saved) as AppState;
+        const savedData = window.localStorage.getItem(DATA_STORAGE_KEY);
+        if (savedData) nextData = { ...initialData, ...(JSON.parse(savedData) as AppData) };
       } catch {
-        nextState = initialState;
+        nextData = initialData;
       }
 
-      const remoteState = await loadAppState<AppState>();
-      if (remoteState) nextState = remoteState;
+      try {
+        const savedUi = window.localStorage.getItem(UI_STORAGE_KEY);
+        if (savedUi) nextUi = { ...initialUi, ...(JSON.parse(savedUi) as UiState) };
+      } catch {
+        nextUi = initialUi;
+      }
+
+      const remoteData = await loadAppState<AppData>();
+      if (remoteData?.session && remoteData?.students) {
+        nextData = remoteData;
+      }
+
+      const role = new URLSearchParams(window.location.search).get("role");
+      if (role === "student" && !nextUi.activeStudentId) {
+        nextUi = { ...nextUi, view: "student-login" };
+      }
+
+      if (nextUi.view === "student-chat" && !nextData.students.some((student) => student.id === nextUi.activeStudentId)) {
+        nextUi = { ...nextUi, view: "student-login", activeStudentId: null };
+      }
 
       if (!isCancelled) {
-        setState(nextState);
-        setIsStateLoaded(true);
-        if (new URLSearchParams(window.location.search).get("role") === "student") {
-          setView("student-login");
-        }
+        setData(nextData);
+        setUi(nextUi);
+        setIsLoaded(true);
       }
     }
 
@@ -86,22 +116,31 @@ export default function AppPage() {
   }, []);
 
   useEffect(() => {
-    if (!isStateLoaded) return;
+    if (!isLoaded) return;
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(data));
     const saveTimer = window.setTimeout(() => {
-      void saveAppState(state);
+      void saveAppState(data);
     }, 500);
 
     return () => window.clearTimeout(saveTimer);
-  }, [state, isStateLoaded]);
+  }, [data, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    window.localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(ui));
+  }, [ui, isLoaded]);
+
+  function setView(view: View) {
+    setUi((current) => ({ ...current, view }));
+  }
 
   function updateSession(session: SessionConfig) {
-    setState((current) => ({ ...current, session }));
+    setData((current) => ({ ...current, session }));
   }
 
   function upsertStudent(student: StudentWorkspace) {
-    setState((current) => ({
+    setData((current) => ({
       ...current,
       students: current.students.some((item) => item.id === student.id)
         ? current.students.map((item) => (item.id === student.id ? student : item))
@@ -109,64 +148,101 @@ export default function AppPage() {
     }));
   }
 
+  function resetStudent(studentId: string) {
+    const now = new Date().toISOString();
+    setData((current) => ({
+      ...current,
+      students: current.students.map((student) =>
+        student.id === studentId
+          ? {
+              ...student,
+              currentStage: "orient",
+              lastActiveAt: now,
+              messages: [createAssistantMessage(getInitialAssistantMessage(current.session), "orient")],
+              prompts: [],
+              safetyAlerts: [],
+              aiLogs: [],
+              analysis: undefined
+            }
+          : student
+      )
+    }));
+  }
+
+  function deleteStudent(studentId: string) {
+    setData((current) => ({ ...current, students: current.students.filter((student) => student.id !== studentId) }));
+    setUi((current) => ({ ...current, activeStudentId: current.activeStudentId === studentId ? null : current.activeStudentId }));
+  }
+
+  function clearStudents() {
+    setData((current) => ({ ...current, students: [] }));
+    setUi((current) => ({ ...current, activeStudentId: null }));
+  }
+
   function resetDemo() {
-    setState(initialState);
-    setActiveStudentId(null);
-    setView("home");
+    setData(initialData);
+    setUi(initialUi);
   }
 
   function openTeacherView(target: TeacherView) {
-    if (isTeacherUnlocked) {
+    if (ui.isTeacherUnlocked) {
       setView(target);
       return;
     }
 
-    setPendingTeacherView(target);
-    setView("teacher-auth");
+    setUi((current) => ({ ...current, pendingTeacherView: target, view: "teacher-auth" }));
   }
 
   function unlockTeacher(pin: string) {
     if (pin.trim() !== TEACHER_PIN) return false;
-    setIsTeacherUnlocked(true);
-    setView(pendingTeacherView);
+    setUi((current) => ({ ...current, isTeacherUnlocked: true, view: current.pendingTeacherView }));
     return true;
+  }
+
+  if (!isLoaded) {
+    return (
+      <main className="app-shell grid min-h-screen place-items-center">
+        <div className="flex items-center gap-2 rounded-[8px] bg-white px-4 py-3 text-sm font-black text-primary shadow-soft">
+          <Loader2 className="animate-spin" size={16} /> 수업 상태를 불러오는 중
+        </div>
+      </main>
+    );
   }
 
   return (
     <main className="app-shell">
-      <TopBar view={view} setView={setView} openTeacherView={openTeacherView} />
-      {view === "home" && <HomeView session={state.session} setView={setView} openTeacherView={openTeacherView} resetDemo={resetDemo} />}
-      {view === "student-login" && (
+      <TopBar view={ui.view} setView={setView} openTeacherView={openTeacherView} />
+      {ui.view === "home" && <HomeView session={data.session} setView={setView} openTeacherView={openTeacherView} resetDemo={resetDemo} />}
+      {ui.view === "student-login" && (
         <StudentLoginView
-          session={state.session}
-          students={state.students}
+          session={data.session}
+          students={data.students}
           onEnter={(student) => {
             upsertStudent(student);
-            setActiveStudentId(student.id);
-            setView("student-chat");
+            setUi((current) => ({ ...current, activeStudentId: student.id, view: "student-chat" }));
           }}
         />
       )}
-      {view === "student-chat" && activeStudent && (
-        <StudentChatView session={state.session} student={activeStudent} onChange={upsertStudent} />
+      {ui.view === "student-chat" && activeStudent && <StudentChatView session={data.session} student={activeStudent} onChange={upsertStudent} onReset={() => resetStudent(activeStudent.id)} />}
+      {ui.view === "student-chat" && !activeStudent && <EmptyStudentState setView={setView} />}
+      {ui.view === "teacher-auth" && <TeacherAuthView onUnlock={unlockTeacher} />}
+      {ui.view === "teacher-settings" && <TeacherSettingsView session={data.session} onSave={updateSession} setView={setView} />}
+      {ui.view === "monitoring" && (
+        <MonitoringView
+          session={data.session}
+          students={data.students}
+          setView={setView}
+          openTeacherView={openTeacherView}
+          onUpdateStudent={upsertStudent}
+          onDeleteStudent={deleteStudent}
+          onClearStudents={clearStudents}
+        />
       )}
-      {view === "student-chat" && !activeStudent && <EmptyStudentState setView={setView} />}
-      {view === "teacher-auth" && <TeacherAuthView onUnlock={unlockTeacher} />}
-      {view === "teacher-settings" && <TeacherSettingsView session={state.session} onSave={updateSession} setView={setView} />}
-      {view === "monitoring" && <MonitoringView session={state.session} students={state.students} setView={setView} openTeacherView={openTeacherView} />}
     </main>
   );
 }
 
-function TopBar({
-  view,
-  setView,
-  openTeacherView
-}: {
-  view: View;
-  setView: (view: View) => void;
-  openTeacherView: (view: TeacherView) => void;
-}) {
+function TopBar({ view, setView, openTeacherView }: { view: View; setView: (view: View) => void; openTeacherView: (view: TeacherView) => void }) {
   const isStudentView = view === "student-login" || view === "student-chat";
 
   return (
@@ -183,25 +259,15 @@ function TopBar({
         </button>
         {!isStudentView && (
           <nav className="flex items-center gap-2 overflow-x-auto">
-            <button
-              className={`rounded-[8px] px-3 py-2 text-sm font-bold transition ${
-                view === "teacher-settings" ? "bg-primary text-white" : "bg-white text-muted hover:bg-primarySoft hover:text-primary"
-              }`}
-              onClick={() => openTeacherView("teacher-settings")}
-            >
+            <NavButton active={view === "teacher-settings"} onClick={() => openTeacherView("teacher-settings")}>
               수업 설정
-            </button>
-            <button
-              className={`rounded-[8px] px-3 py-2 text-sm font-bold transition ${
-                view === "monitoring" ? "bg-primary text-white" : "bg-white text-muted hover:bg-primarySoft hover:text-primary"
-              }`}
-              onClick={() => openTeacherView("monitoring")}
-            >
+            </NavButton>
+            <NavButton active={view === "monitoring"} onClick={() => openTeacherView("monitoring")}>
               모니터링
-            </button>
-            <button className="rounded-[8px] px-3 py-2 text-sm font-bold text-muted transition hover:bg-primarySoft hover:text-primary" onClick={() => setView("student-login")}>
+            </NavButton>
+            <NavButton active={false} onClick={() => setView("student-login")}>
               학생 입장 확인
-            </button>
+            </NavButton>
           </nav>
         )}
       </div>
@@ -209,17 +275,7 @@ function TopBar({
   );
 }
 
-function HomeView({
-  session,
-  setView,
-  openTeacherView,
-  resetDemo
-}: {
-  session: SessionConfig;
-  setView: (view: View) => void;
-  openTeacherView: (view: TeacherView) => void;
-  resetDemo: () => void;
-}) {
+function HomeView({ session, setView, openTeacherView, resetDemo }: { session: SessionConfig; setView: (view: View) => void; openTeacherView: (view: TeacherView) => void; resetDemo: () => void }) {
   const studentLink = typeof window === "undefined" ? "" : `${window.location.origin}?role=student`;
 
   return (
@@ -228,12 +284,9 @@ function HomeView({
         <p className="mb-4 inline-flex items-center gap-2 rounded-[8px] border border-primary/20 bg-primarySoft px-3 py-2 text-sm font-black text-primary">
           <Sparkles size={16} /> 교사용 수업 콘솔
         </p>
-        <h1 className="max-w-3xl text-4xl font-black leading-tight text-ink sm:text-5xl">
-          학생의 생각을 모아 프롬프트로 완성합니다.
-        </h1>
+        <h1 className="max-w-3xl text-4xl font-black leading-tight text-ink sm:text-5xl">학생의 생각을 모아 이미지 생성 프롬프트로 완성합니다.</h1>
         <p className="mt-5 max-w-2xl text-lg font-semibold leading-8 text-muted">
-          교사는 수업 주제와 질문 흐름을 설정하고, 학생은 질문에 직접 답합니다. AI는 학생 답변에 근거해 프롬프트 초안을 만들고
-          수정할 부분을 다시 묻는 역할만 합니다.
+          교사는 수업 주제와 질문 흐름을 설계하고, 챗봇은 학생 답변 맥락에 맞게 질문을 이어갑니다. 최종 프롬프트는 학생 답변에 근거해 만들고 학생이 승인합니다.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <PrimaryButton onClick={() => openTeacherView("teacher-settings")} icon={<Settings size={18} />}>
@@ -251,16 +304,10 @@ function HomeView({
             <InfoRow label="학생 입장 링크" value={studentLink || "?role=student"} />
             <InfoRow label="학생 접속 코드" value={session.accessCode} />
             <InfoRow label="수업 주제" value={session.topic} />
-            <InfoRow label="AI 역할" value={session.aiEnabled ? "학생 답변 기반 프롬프트 생성/수정" : "규칙 기반 프롬프트 생성/수정"} />
+            <InfoRow label="AI 역할" value="질문 진행, 안전 판단, 프롬프트 생성, 교사용 분석" />
           </dl>
           <div className="mt-4 flex flex-wrap gap-2">
-            <SecondaryButton
-              type="button"
-              onClick={() => {
-                if (studentLink) void navigator.clipboard?.writeText(studentLink);
-              }}
-              icon={<KeyRound size={18} />}
-            >
+            <SecondaryButton type="button" onClick={() => void copyText(studentLink)} icon={<KeyRound size={18} />}>
               학생 링크 복사
             </SecondaryButton>
             <SecondaryButton type="button" onClick={() => setView("student-login")} icon={<LogIn size={18} />}>
@@ -268,33 +315,12 @@ function HomeView({
             </SecondaryButton>
           </div>
         </InfoPanel>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {[
-            ["1", "수업 설정", "주제, 질문 단계, AI 프롬프트 생성 기준을 정합니다."],
-            ["2", "학생 답변", "학생은 질문에 직접 답하고 자신의 생각을 남깁니다."],
-            ["3", "프롬프트 수정", "AI 초안을 보고 학생이 수정하거나 최종 확정합니다."]
-          ].map(([step, title, copy]) => (
-            <div key={step} className="rounded-[8px] border border-line bg-white p-4 shadow-soft">
-              <span className="grid h-8 w-8 place-items-center rounded-[8px] bg-secondarySoft text-sm font-black text-secondary">{step}</span>
-              <h3 className="mt-4 font-black text-ink">{title}</h3>
-              <p className="mt-2 text-sm font-semibold leading-6 text-muted">{copy}</p>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );
 }
 
-function StudentLoginView({
-  session,
-  students,
-  onEnter
-}: {
-  session: SessionConfig;
-  students: StudentWorkspace[];
-  onEnter: (student: StudentWorkspace) => void;
-}) {
+function StudentLoginView({ session, students, onEnter }: { session: SessionConfig; students: StudentWorkspace[]; onEnter: (student: StudentWorkspace) => void }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState(session.accessCode);
   const [error, setError] = useState("");
@@ -302,35 +328,29 @@ function StudentLoginView({
   function submit(event: FormEvent) {
     event.preventDefault();
     const normalizedCode = code.trim().toUpperCase();
+    const trimmedName = name.trim();
+
     if (normalizedCode !== session.accessCode.toUpperCase()) {
       setError("접속 코드가 맞지 않아요. 선생님이 알려준 코드를 다시 확인해줘.");
       return;
     }
 
-    if (!name.trim()) {
+    if (!trimmedName) {
       setError("이름을 입력해줘.");
       return;
     }
 
-    const existing = students.find((student) => student.name === name.trim() && student.accessCode === normalizedCode);
+    const existing = students.find((student) => student.name === trimmedName && student.accessCode === normalizedCode);
     const now = new Date().toISOString();
     const student: StudentWorkspace =
       existing ??
       {
         id: crypto.randomUUID(),
-        name: name.trim(),
+        name: trimmedName,
         accessCode: normalizedCode,
         currentStage: "orient",
         lastActiveAt: now,
-        messages: [
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: getInitialAssistantMessage(session),
-            stage: "orient",
-            createdAt: now
-          }
-        ],
+        messages: [createAssistantMessage(getInitialAssistantMessage(session), "orient")],
         prompts: [],
         safetyAlerts: [],
         aiLogs: []
@@ -346,9 +366,7 @@ function StudentLoginView({
           <KeyRound size={24} />
         </span>
         <h1 className="mt-5 text-3xl font-black text-ink">학생 입장</h1>
-        <p className="mt-2 font-semibold leading-7 text-muted">
-          선생님이 알려준 접속 코드와 이름을 입력하면 시작합니다. 질문에 대한 답은 직접 써야 하고, AI는 여러분의 답을 대신 쓰지 않습니다.
-        </p>
+        <p className="mt-2 font-semibold leading-7 text-muted">선생님이 알려준 접속 코드와 이름을 입력하면 시작합니다. 이미 진행 중이었다면 새로고침 뒤에도 이어서 할 수 있어요.</p>
         <div className="mt-6 grid gap-4">
           <TextField label="이름" value={name} onChange={setName} placeholder="예: 김하늘" />
           <TextField label="접속 코드" value={code} onChange={(value) => setCode(value.toUpperCase())} placeholder="예: HITL35" />
@@ -362,15 +380,7 @@ function StudentLoginView({
   );
 }
 
-function StudentChatView({
-  session,
-  student,
-  onChange
-}: {
-  session: SessionConfig;
-  student: StudentWorkspace;
-  onChange: (student: StudentWorkspace) => void;
-}) {
+function StudentChatView({ session, student, onChange, onReset }: { session: SessionConfig; student: StudentWorkspace; onChange: (student: StudentWorkspace) => void; onReset: () => void }) {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -387,6 +397,7 @@ function StudentChatView({
       id: crypto.randomUUID(),
       alertType: "paste_attempt",
       attemptedContent: content,
+      reason: "붙여넣기 시도가 감지되었습니다.",
       isRead: false,
       createdAt: new Date().toISOString()
     };
@@ -410,32 +421,28 @@ function StudentChatView({
           message: trimmed,
           currentStage: student.currentStage,
           latestPrompt: latestPrompt?.content,
-          loopCount: latestPrompt?.loopCount ?? 0,
-          aiCallCount: student.aiLogs.filter((log) => log.used).length
+          loopCount: latestPrompt?.loopCount ?? 0
         })
       });
 
       const result = await response.json();
       const now = new Date().toISOString();
+      const nextMessages: ChatMessage[] = [...student.messages];
+      if (result.userMessage) nextMessages.push(result.userMessage);
 
       if (result.blocked) {
         const alert: SafetyAlert = {
           id: crypto.randomUUID(),
           alertType: result.alertType,
           attemptedContent: trimmed,
+          reason: result.reason,
           isRead: false,
           createdAt: now
         };
-        const assistantMessage: ChatMessage = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: result.message,
-          stage: student.currentStage,
-          createdAt: now
-        };
+        nextMessages.push(createAssistantMessage(result.message, student.currentStage));
         onChange({
           ...student,
-          messages: [...student.messages, assistantMessage],
+          messages: nextMessages,
           safetyAlerts: [...student.safetyAlerts, alert],
           lastActiveAt: now
         });
@@ -450,7 +457,7 @@ function StudentChatView({
           content: result.draftPrompt,
           isFinal: false,
           loopCount: prompts.length,
-          source: result.promptSource,
+          source: result.promptSource ?? "ai_assisted",
           createdAt: now
         });
       }
@@ -459,10 +466,11 @@ function StudentChatView({
         prompts[prompts.length - 1] = { ...prompts[prompts.length - 1], isFinal: true };
       }
 
+      nextMessages.push(result.assistantMessage);
       onChange({
         ...student,
         currentStage: result.stage,
-        messages: [...student.messages, result.userMessage, result.assistantMessage],
+        messages: nextMessages,
         prompts,
         aiLogs: result.aiLog ? [...student.aiLogs, result.aiLog as AiAssistLog] : student.aiLogs,
         lastActiveAt: now
@@ -473,21 +481,24 @@ function StudentChatView({
   }
 
   return (
-    <section className="page-band grid gap-5 py-6 lg:grid-cols-[1fr_340px]">
-      <div className="min-h-[calc(100vh-120px)] rounded-[8px] border border-line bg-white shadow-soft">
-        <div className="border-b border-line p-4">
+    <section className="page-band grid h-[calc(100vh-73px)] min-h-0 gap-4 overflow-hidden py-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="flex min-h-0 flex-col rounded-[8px] border border-line bg-white shadow-soft">
+        <div className="shrink-0 border-b border-line p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-black text-primary">{session.topic}</p>
               <h1 className="text-2xl font-black text-ink">{student.name}의 프롬프트 대화</h1>
             </div>
-            <span className="rounded-[8px] bg-secondarySoft px-3 py-2 text-sm font-black text-secondary">
-              {STAGES[Math.max(stageIndex, 0)]?.label ?? "진행 중"}
-            </span>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-[8px] bg-secondarySoft px-3 py-2 text-sm font-black text-secondary">{STAGES[Math.max(stageIndex, 0)]?.label ?? "진행 중"}</span>
+              <SecondaryButton type="button" onClick={onReset} icon={<RotateCcw size={16} />}>
+                처음부터 진행
+              </SecondaryButton>
+            </div>
           </div>
           <StageProgress currentStage={student.currentStage} />
         </div>
-        <div ref={scrollRef} className="h-[calc(100vh-330px)] min-h-[380px] space-y-4 overflow-y-auto p-4">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {student.messages.map((message) => (
             <ChatBubble key={message.id} message={message} />
           ))}
@@ -498,14 +509,14 @@ function StudentChatView({
           )}
         </div>
         <form
-          className="border-t border-line p-4"
+          className="shrink-0 border-t border-line p-4"
           onSubmit={(event) => {
             event.preventDefault();
-            sendMessage();
+            void sendMessage();
           }}
         >
           <textarea
-            className="focus-ring min-h-24 w-full rounded-[8px] border border-line bg-surface p-3 font-semibold leading-7 text-ink"
+            className="focus-ring h-20 w-full resize-none rounded-[8px] border border-line bg-surface p-3 font-semibold leading-7 text-ink"
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onPaste={(event) => {
@@ -520,39 +531,29 @@ function StudentChatView({
             <div className="flex gap-2">
               {student.currentStage === "revise" && (
                 <>
-                  <SecondaryButton type="button" onClick={() => sendMessage("조금 더 구체적으로 수정하고 싶어요")} icon={<PenLine size={18} />}>
-                    수정할래요
+                  <SecondaryButton type="button" onClick={() => void sendMessage("조금 더 구체적으로 바꿔줘")}>
+                    더 구체적으로
                   </SecondaryButton>
-                  <PrimaryButton type="button" onClick={() => sendMessage("이걸로 확정할래요")} icon={<Check size={18} />}>
-                    확정할래요
-                  </PrimaryButton>
+                  <SecondaryButton type="button" onClick={() => void sendMessage("이걸로 확정할래요")}>
+                    이걸로 확정
+                  </SecondaryButton>
                 </>
               )}
             </div>
-            <PrimaryButton disabled={isSending || student.currentStage === "final"} icon={<ChevronRight size={18} />}>
-              보내기
-            </PrimaryButton>
+            <PrimaryButton disabled={isSending || student.currentStage === "final"}>{student.currentStage === "final" ? "완료" : "보내기"}</PrimaryButton>
           </div>
         </form>
       </div>
-      <aside className="space-y-4">
-        <InfoPanel title="현재 초안" icon={<MessageSquareText size={20} />}>
+      <aside className="flex min-h-0 flex-col gap-4 overflow-hidden">
+        <InfoPanel title="현재 결과물" icon={<Check size={20} />}>
           {latestPrompt ? (
-            <div>
-              <p className="mb-2 text-sm font-black text-muted">버전 {latestPrompt.version} · {sourceLabel(latestPrompt.source)}</p>
-              <p className="whitespace-pre-wrap rounded-[8px] bg-surface p-3 text-sm font-semibold leading-6 text-ink">{latestPrompt.content}</p>
-              {finalPrompt && <p className="mt-3 rounded-[8px] bg-primarySoft px-3 py-2 text-sm font-black text-primary">최종 승인 완료</p>}
-            </div>
+            <PromptCopyBox prompt={finalPrompt ?? latestPrompt} finalLabel={Boolean(finalPrompt)} />
           ) : (
-            <p className="text-sm font-semibold leading-6 text-muted">학생 답변이 충분히 모이면 초안이 여기에 표시됩니다.</p>
+            <p className="text-sm font-semibold leading-6 text-muted">학생 답변이 충분히 모이면 이미지 생성 프롬프트가 여기에 표시됩니다.</p>
           )}
         </InfoPanel>
-        <InfoPanel title="AI 보조" icon={<Sparkles size={20} />}>
-          <p className="text-sm font-semibold leading-6 text-muted">
-            {session.aiEnabled
-              ? `ON · 학생 답변 기반 프롬프트 생성/수정 ${student.aiLogs.filter((log) => log.used).length}/${session.aiCallsPerStudentLimit}회`
-              : "OFF · 규칙 기반으로 프롬프트를 생성하고 수정합니다."}
-          </p>
+        <InfoPanel title="진행 안내" icon={<Sparkles size={20} />}>
+          <p className="text-sm font-semibold leading-6 text-muted">챗봇은 선생님이 설정한 질문을 바탕으로 대화를 이어가고, 최종 프롬프트는 학생 답변에 근거해 만듭니다.</p>
         </InfoPanel>
       </aside>
     </section>
@@ -578,9 +579,7 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (pin: string) => boolean }) {
           <UserRound size={24} />
         </span>
         <h1 className="mt-5 text-3xl font-black text-ink">교사 입장</h1>
-        <p className="mt-2 font-semibold leading-7 text-muted">
-          수업 설정과 모니터링은 교사용 PIN을 입력해야 열 수 있습니다.
-        </p>
+        <p className="mt-2 font-semibold leading-7 text-muted">수업 설정과 모니터링은 교사용 PIN을 입력해야 열 수 있습니다. 새로고침 후에도 이 상태는 유지됩니다.</p>
         <div className="mt-6">
           <TextField label="교사용 PIN" value={pin} onChange={setPin} placeholder="교사용 PIN 입력" />
         </div>
@@ -593,26 +592,60 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (pin: string) => boolean }) {
   );
 }
 
-function TeacherSettingsView({
-  session,
-  onSave,
-  setView
-}: {
-  session: SessionConfig;
-  onSave: (session: SessionConfig) => void;
-  setView: (view: View) => void;
-}) {
+function TeacherSettingsView({ session, onSave, setView }: { session: SessionConfig; onSave: (session: SessionConfig) => void; setView: (view: View) => void }) {
   const [draft, setDraft] = useState(session);
-  const requiredText = draft.requiredElements.join(", ");
-  const constraintsText = draft.constraints.join(", ");
+  const [requiredText, setRequiredText] = useState(session.requiredElements.join(", "));
+  const [constraintsText, setConstraintsText] = useState(session.constraints.join(", "));
+  const [isDesigning, setIsDesigning] = useState(false);
 
-  function save() {
-    onSave({
+  function currentDraft() {
+    return {
       ...draft,
       requiredElements: splitList(requiredText),
       constraints: splitList(constraintsText)
-    });
+    };
+  }
+
+  function save() {
+    onSave(currentDraft());
     setView("monitoring");
+  }
+
+  async function designQuestions(mode: "generate" | "refine") {
+    setIsDesigning(true);
+    try {
+      const response = await fetch("/api/lesson-design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: currentDraft(), mode })
+      });
+      const result = await response.json();
+      if (Array.isArray(result.questionFlow)) {
+        setDraft((current) => ({ ...current, questionFlow: result.questionFlow }));
+      }
+    } finally {
+      setIsDesigning(false);
+    }
+  }
+
+  function updateQuestion(stage: Stage, question: string) {
+    setDraft((current) => ({
+      ...current,
+      questionFlow: current.questionFlow.map((item) => (item.stage === stage ? { ...item, question } : item))
+    }));
+  }
+
+  function deleteQuestion(stage: Stage) {
+    setDraft((current) => ({ ...current, questionFlow: current.questionFlow.filter((item) => item.stage !== stage) }));
+  }
+
+  function addQuestion() {
+    const missing = STAGES.find((stage) => !draft.questionFlow.some((item) => item.stage === stage.stage));
+    if (!missing) return;
+    setDraft((current) => ({
+      ...current,
+      questionFlow: [...current.questionFlow, { ...missing, question: "학생의 답변을 바탕으로 다음 생각을 물어보는 질문을 입력하세요." }]
+    }));
   }
 
   return (
@@ -621,7 +654,7 @@ function TeacherSettingsView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-primary">교사 설정</p>
-            <h1 className="text-3xl font-black text-ink">수업 주제와 프롬프트 생성 기준</h1>
+            <h1 className="text-3xl font-black text-ink">수업 주제와 질문 흐름</h1>
           </div>
           <PrimaryButton onClick={save} icon={<Save size={18} />}>
             저장하고 모니터링
@@ -636,80 +669,52 @@ function TeacherSettingsView({
           <TextArea label="학습 목표" value={draft.learningGoal} onChange={(value) => setDraft({ ...draft, learningGoal: value })} />
           <div className="grid gap-4 md:grid-cols-2">
             <TextField label="최종 산출물 유형" value={draft.outputType} onChange={(value) => setDraft({ ...draft, outputType: value })} />
-            <NumberField
-              label="최대 수정 루프 수"
-              value={draft.maxLoopCount}
-              min={1}
-              max={5}
-              onChange={(value) => setDraft({ ...draft, maxLoopCount: value })}
-            />
+            <NumberField label="최대 수정 루프 수" value={draft.maxLoopCount} min={1} max={5} onChange={(value) => setDraft({ ...draft, maxLoopCount: value })} />
           </div>
-          <TextArea
-            label="필수 포함 요소"
-            value={requiredText}
-            onChange={(value) => setDraft({ ...draft, requiredElements: splitList(value) })}
-            placeholder="쉼표로 구분: 장소, 주요 대상, 문제 해결 방법"
-          />
-          <TextArea
-            label="금지/주의 요소"
-            value={constraintsText}
-            onChange={(value) => setDraft({ ...draft, constraints: splitList(value) })}
-            placeholder="쉼표로 구분: 주제 이탈 금지, 혐오 표현 금지"
-          />
+          <TextArea label="필수 포함 요소" value={requiredText} onChange={setRequiredText} placeholder="쉼표로 구분: 장소, 주요 대상, 문제 해결 방법" />
+          <TextArea label="금지/주의 요소" value={constraintsText} onChange={setConstraintsText} placeholder="쉼표로 구분: 주제 이탈 금지, 혐오 표현 금지" />
           <div>
-            <h2 className="text-lg font-black text-ink">질문 단계</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-black text-ink">질문 단계</h2>
+              <div className="flex flex-wrap gap-2">
+                <SecondaryButton type="button" onClick={() => void designQuestions("generate")} disabled={isDesigning} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
+                  AI로 질문 단계 만들기
+                </SecondaryButton>
+                <SecondaryButton type="button" onClick={() => void designQuestions("refine")} disabled={isDesigning} icon={<Sparkles size={16} />}>
+                  AI로 수업설계 다듬기
+                </SecondaryButton>
+                <SecondaryButton type="button" onClick={addQuestion} icon={<Plus size={16} />}>
+                  단계 추가
+                </SecondaryButton>
+              </div>
+            </div>
             <div className="mt-3 grid gap-3">
-              {draft.questionFlow.slice(0, 4).map((item, index) => (
-                <label key={item.stage} className="grid gap-2">
-                  <span className="text-sm font-black text-muted">{index + 1}. {item.label}</span>
-                  <input
-                    className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink"
-                    value={item.question}
-                    onChange={(event) => {
-                      const questionFlow = draft.questionFlow.map((flow) =>
-                        flow.stage === item.stage ? { ...flow, question: event.target.value } : flow
-                      );
-                      setDraft({ ...draft, questionFlow });
-                    }}
-                  />
-                </label>
+              {draft.questionFlow.map((item, index) => (
+                <div key={item.stage} className="grid gap-2 rounded-[8px] border border-line bg-surface p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-black text-muted">
+                      {index + 1}. {item.label}
+                    </span>
+                    <button type="button" className="text-danger" onClick={() => deleteQuestion(item.stage)} title="질문 삭제">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-3 font-semibold text-ink" value={item.question} onChange={(event) => updateQuestion(item.stage, event.target.value)} />
+                </div>
               ))}
             </div>
           </div>
         </div>
       </div>
       <aside className="space-y-4">
-        <InfoPanel title="AI 프롬프트 생성 보조" icon={<Sparkles size={20} />}>
-          <label className="flex items-center justify-between gap-3 rounded-[8px] bg-surface p-3">
-            <span>
-              <span className="block font-black text-ink">Gemini 사용</span>
-              <span className="text-sm font-semibold text-muted">학생 답변을 바탕으로 프롬프트 초안과 수정본을 만듭니다.</span>
-            </span>
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-primary"
-              checked={draft.aiEnabled}
-              onChange={(event) => setDraft({ ...draft, aiEnabled: event.target.checked })}
-            />
-          </label>
-          <div className="mt-4 grid gap-3">
-            <NumberField
-              label="학생당 AI 프롬프트 생성 한도"
-              value={draft.aiCallsPerStudentLimit}
-              min={0}
-              max={20}
-              onChange={(value) => setDraft({ ...draft, aiCallsPerStudentLimit: value })}
-            />
-            <p className="rounded-[8px] bg-warningSoft px-3 py-2 text-sm font-bold leading-6 text-warning">
-              AI는 학생 답변을 대신 쓰지 않습니다. 학생이 직접 답한 내용에 근거해 프롬프트를 만들고, 수정할 부분을 다시 묻습니다.
-            </p>
-          </div>
+        <InfoPanel title="AI 활용 범위" icon={<Sparkles size={20} />}>
+          <p className="text-sm font-semibold leading-6 text-muted">AI는 수업 질문 설계, 학생 챗봇 진행, 안전 판단, 프롬프트 생성, 교사용 분석에 사용됩니다. 학생의 답변 아이디어를 대신 작성하지 않습니다.</p>
         </InfoPanel>
         <InfoPanel title="수업 운영 안내" icon={<ShieldCheck size={20} />}>
           <ul className="space-y-2 text-sm font-semibold leading-6 text-muted">
             <li>학생에게는 학생 입장 링크와 접속 코드만 안내합니다.</li>
             <li>교사용 PIN은 학생에게 공유하지 않습니다.</li>
-            <li>학생 답변 이후 AI가 만든 초안은 학생이 수정하거나 확정합니다.</li>
+            <li>최종 프롬프트는 학생이 승인한 뒤 결과물로 표시됩니다.</li>
           </ul>
         </InfoPanel>
       </aside>
@@ -721,34 +726,35 @@ function MonitoringView({
   session,
   students,
   setView,
-  openTeacherView
+  openTeacherView,
+  onUpdateStudent,
+  onDeleteStudent,
+  onClearStudents
 }: {
   session: SessionConfig;
   students: StudentWorkspace[];
   setView: (view: View) => void;
   openTeacherView: (view: TeacherView) => void;
+  onUpdateStudent: (student: StudentWorkspace) => void;
+  onDeleteStudent: (studentId: string) => void;
+  onClearStudents: () => void;
 }) {
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null;
   const stats = useMemo(() => {
     const finalCount = students.filter((student) => student.prompts.some((prompt) => prompt.isFinal)).length;
     const alertCount = students.reduce((sum, student) => sum + student.safetyAlerts.length, 0);
-    const aiCount = students.reduce((sum, student) => sum + student.aiLogs.filter((log) => log.used).length, 0);
-    return { finalCount, alertCount, aiCount };
+    const analysisCount = students.filter((student) => student.analysis).length;
+    return { finalCount, alertCount, analysisCount };
   }, [students]);
 
   function downloadCsv() {
-    const header = ["student_name", "current_stage", "last_active_at", "loop_count", "ai_assist_count", "final_prompt", "alert_count"];
+    const header = ["student_name", "current_stage", "last_active_at", "loop_count", "final_prompt", "alert_count", "analysis_summary"];
     const rows = students.map((student) => {
       const latest = student.prompts.at(-1);
       const final = student.prompts.find((prompt) => prompt.isFinal);
-      return [
-        student.name,
-        student.currentStage,
-        student.lastActiveAt,
-        latest?.loopCount ?? 0,
-        student.aiLogs.filter((log) => log.used).length,
-        final?.content ?? latest?.content ?? "",
-        student.safetyAlerts.length
-      ];
+      return [student.name, student.currentStage, student.lastActiveAt, latest?.loopCount ?? 0, final?.content ?? latest?.content ?? "", student.safetyAlerts.length, student.analysis?.summary ?? ""];
     });
     const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -758,6 +764,21 @@ function MonitoringView({
     anchor.download = "hitl-monitoring.csv";
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function analyzeStudent(student: StudentWorkspace) {
+    setIsAnalyzing(true);
+    try {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session, student })
+      });
+      const result = await response.json();
+      onUpdateStudent({ ...student, analysis: result.analysis as StudentAnalysis });
+    } finally {
+      setIsAnalyzing(false);
+    }
   }
 
   return (
@@ -771,6 +792,9 @@ function MonitoringView({
           <SecondaryButton onClick={() => openTeacherView("teacher-settings")} icon={<Settings size={18} />}>
             설정 수정
           </SecondaryButton>
+          <SecondaryButton onClick={onClearStudents} icon={<Trash2 size={18} />}>
+            전체 학생 데이터 삭제
+          </SecondaryButton>
           <PrimaryButton onClick={downloadCsv} icon={<Download size={18} />}>
             CSV 내보내기
           </PrimaryButton>
@@ -779,17 +803,17 @@ function MonitoringView({
       <div className="mt-5 grid gap-3 md:grid-cols-4">
         <StatCard icon={<UserRound size={20} />} label="참여 학생" value={`${students.length}명`} />
         <StatCard icon={<Check size={20} />} label="최종 완료" value={`${stats.finalCount}명`} />
-        <StatCard icon={<Sparkles size={20} />} label="AI 프롬프트 생성" value={`${stats.aiCount}회`} />
+        <StatCard icon={<Sparkles size={20} />} label="분석 완료" value={`${stats.analysisCount}명`} />
         <StatCard icon={<AlertTriangle size={20} />} label="안전 경고" value={`${stats.alertCount}건`} />
       </div>
       <div className="mt-5 overflow-hidden rounded-[8px] border border-line bg-white shadow-soft">
-        <div className="grid grid-cols-[1.1fr_1fr_0.8fr_0.8fr_0.8fr_1.4fr] gap-3 border-b border-line bg-surface px-4 py-3 text-sm font-black text-muted max-lg:hidden">
+        <div className="grid grid-cols-[1.1fr_1fr_0.8fr_0.8fr_1.4fr_0.5fr] gap-3 border-b border-line bg-surface px-4 py-3 text-sm font-black text-muted max-lg:hidden">
           <span>학생</span>
           <span>현재 단계</span>
           <span>수정</span>
-          <span>AI</span>
           <span>경고</span>
-          <span>프롬프트 상태</span>
+          <span>최종 결과물</span>
+          <span>삭제</span>
         </div>
         {students.length === 0 ? (
           <div className="p-8 text-center">
@@ -803,9 +827,11 @@ function MonitoringView({
             const latest = student.prompts.at(-1);
             const final = student.prompts.find((prompt) => prompt.isFinal);
             return (
-              <div
+              <button
+                type="button"
                 key={student.id}
-                className="grid gap-3 border-b border-line px-4 py-4 text-sm font-semibold text-ink last:border-b-0 lg:grid-cols-[1.1fr_1fr_0.8fr_0.8fr_0.8fr_1.4fr]"
+                className="grid w-full gap-3 border-b border-line px-4 py-4 text-left text-sm font-semibold text-ink transition hover:bg-primarySoft/50 last:border-b-0 lg:grid-cols-[1.1fr_1fr_0.8fr_0.8fr_1.4fr_0.5fr]"
+                onClick={() => setSelectedStudentId(student.id)}
               >
                 <span>
                   <strong className="block text-base">{student.name}</strong>
@@ -813,15 +839,147 @@ function MonitoringView({
                 </span>
                 <span>{stageLabel(student.currentStage)}</span>
                 <span>{latest?.loopCount ?? 0}회</span>
-                <span>{student.aiLogs.filter((log) => log.used).length}회</span>
                 <span className={student.safetyAlerts.length > 0 ? "text-danger" : "text-muted"}>{student.safetyAlerts.length}건</span>
-                <span className="truncate">{final ? "최종 완료" : latest ? `초안 v${latest.version}` : "대화 중"}</span>
-              </div>
+                <span className="truncate">{final ? final.content : latest ? `초안 v${latest.version}` : "대화 중"}</span>
+                <span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="inline-flex text-danger"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDeleteStudent(student.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") onDeleteStudent(student.id);
+                    }}
+                  >
+                    <Trash2 size={18} />
+                  </span>
+                </span>
+              </button>
             );
           })
         )}
       </div>
+      {selectedStudent && (
+        <StudentDetailModal
+          session={session}
+          student={selectedStudent}
+          isAnalyzing={isAnalyzing}
+          onClose={() => setSelectedStudentId(null)}
+          onAnalyze={() => void analyzeStudent(selectedStudent)}
+        />
+      )}
     </section>
+  );
+}
+
+function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze }: { session: SessionConfig; student: StudentWorkspace; isAnalyzing: boolean; onClose: () => void; onAnalyze: () => void }) {
+  const latest = student.prompts.at(-1);
+  const final = student.prompts.find((prompt) => prompt.isFinal);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/35 p-4">
+      <section className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[8px] bg-white p-5 shadow-soft">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+          <div>
+            <p className="text-sm font-black text-primary">{session.topic}</p>
+            <h2 className="text-2xl font-black text-ink">{student.name} 대화 기록</h2>
+          </div>
+          <button className="rounded-[8px] p-2 text-muted hover:bg-surface" onClick={onClose} title="닫기">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-4">
+            <InfoPanel title="전체 대화" icon={<ClipboardList size={20} />}>
+              <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                {student.messages.map((message) => (
+                  <div key={message.id} className={`rounded-[8px] p-3 ${message.role === "user" ? "bg-primarySoft" : "bg-surface"}`}>
+                    <p className="text-xs font-black text-muted">
+                      {message.role === "user" ? "학생" : "챗봇"} · {stageLabel(message.stage)} · {formatTime(message.createdAt)}
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm font-semibold leading-6 text-ink">{message.content}</p>
+                  </div>
+                ))}
+              </div>
+            </InfoPanel>
+            <InfoPanel title="경고 기록" icon={<AlertTriangle size={20} />}>
+              {student.safetyAlerts.length > 0 ? (
+                <div className="space-y-2">
+                  {student.safetyAlerts.map((alert) => (
+                    <div key={alert.id} className="rounded-[8px] bg-dangerSoft p-3 text-sm font-semibold leading-6 text-danger">
+                      <p className="font-black">{alertLabel(alert.alertType)} · {formatTime(alert.createdAt)}</p>
+                      <p>입력: {alert.attemptedContent}</p>
+                      {alert.reason && <p>판단 사유: {alert.reason}</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-semibold text-muted">경고 기록이 없습니다.</p>
+              )}
+            </InfoPanel>
+          </div>
+          <aside className="space-y-4">
+            <InfoPanel title="최종 결과물" icon={<Copy size={20} />}>
+              {latest ? <PromptCopyBox prompt={final ?? latest} finalLabel={Boolean(final)} /> : <p className="text-sm font-semibold text-muted">아직 프롬프트가 없습니다.</p>}
+            </InfoPanel>
+            <InfoPanel title="AI 분석" icon={<Sparkles size={20} />}>
+              <PrimaryButton className="w-full justify-center" onClick={onAnalyze} disabled={isAnalyzing} icon={isAnalyzing ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
+                AI 분석하기
+              </PrimaryButton>
+              {student.analysis && (
+                <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-ink">
+                  <p className="rounded-[8px] bg-surface p-3">{student.analysis.summary}</p>
+                  <AnalysisList title="개념 인식" items={[student.analysis.conceptUnderstanding]} />
+                  <AnalysisList title="강점" items={student.analysis.strengths} />
+                  <AnalysisList title="오해/부족한 점" items={student.analysis.misconceptions} />
+                  <AnalysisList title="교사 추천 지도" items={student.analysis.teacherRecommendations} />
+                  <AnalysisList title="다음 질문" items={student.analysis.nextQuestions} />
+                </div>
+              )}
+            </InfoPanel>
+          </aside>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AnalysisList({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <h3 className="font-black text-muted">{title}</h3>
+      <ul className="mt-1 list-disc space-y-1 pl-5">
+        {items.map((item, index) => (
+          <li key={`${title}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PromptCopyBox({ prompt, finalLabel }: { prompt: PromptRecord; finalLabel: boolean }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyPrompt() {
+    await copyText(prompt.content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  return (
+    <button type="button" className="w-full rounded-[8px] bg-surface p-3 text-left transition hover:bg-primarySoft" onClick={() => void copyPrompt()} title="클릭해서 복사">
+      <p className="mb-2 flex items-center justify-between gap-2 text-xs font-black text-muted">
+        <span>{finalLabel ? "최종 승인 완료" : `초안 v${prompt.version}`} · {sourceLabel(prompt.source)}</span>
+        <span className="inline-flex items-center gap-1 text-primary">
+          <Copy size={14} /> {copied ? "복사됨" : "클릭 복사"}
+        </span>
+      </p>
+      <p className="whitespace-pre-wrap text-sm font-semibold leading-6 text-ink">{prompt.content}</p>
+    </button>
   );
 }
 
@@ -856,13 +1014,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[78%] whitespace-pre-wrap rounded-[8px] px-4 py-3 text-sm font-semibold leading-7 ${
-          isUser ? "bg-primary text-white" : "bg-surface text-ink"
-        }`}
-      >
-        {message.content}
-      </div>
+      <div className={`max-w-[78%] whitespace-pre-wrap rounded-[8px] px-4 py-3 text-sm font-semibold leading-7 ${isUser ? "bg-primary text-white" : "bg-surface text-ink"}`}>{message.content}</div>
     </div>
   );
 }
@@ -900,110 +1052,53 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
   );
 }
 
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
+function NavButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button className={`rounded-[8px] px-3 py-2 text-sm font-bold transition ${active ? "bg-primary text-white" : "bg-white text-muted hover:bg-primarySoft hover:text-primary"}`} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
     <label className="grid gap-2">
       <span className="text-sm font-black text-muted">{label}</span>
-      <input
-        className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-      />
+      <input className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
     </label>
   );
 }
 
-function TextArea({
-  label,
-  value,
-  onChange,
-  placeholder
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
+function TextArea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
     <label className="grid gap-2">
       <span className="text-sm font-black text-muted">{label}</span>
-      <textarea
-        className="focus-ring min-h-24 rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold leading-7 text-ink"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-      />
+      <textarea className="focus-ring min-h-24 rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold leading-7 text-ink" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
     </label>
   );
 }
 
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  onChange
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-}) {
+function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
   return (
     <label className="grid gap-2">
       <span className="text-sm font-black text-muted">{label}</span>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
+      <input type="number" min={min} max={max} className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink" value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );
 }
 
-function PrimaryButton({
-  children,
-  icon,
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
+function PrimaryButton({ children, icon, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
   return (
-    <button
-      className={`inline-flex items-center gap-2 rounded-[8px] bg-primary px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#005a2d] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-      {...props}
-    >
+    <button className={`inline-flex items-center gap-2 rounded-[8px] bg-primary px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-[#005a2d] disabled:cursor-not-allowed disabled:opacity-50 ${className}`} {...props}>
       {icon}
       {children}
     </button>
   );
 }
 
-function SecondaryButton({
-  children,
-  icon,
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
+function SecondaryButton({ children, icon, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) {
   return (
-    <button
-      className={`inline-flex items-center gap-2 rounded-[8px] border border-primary/25 bg-primarySoft px-4 py-3 text-sm font-black text-primary transition hover:border-primary ${className}`}
-      {...props}
-    >
+    <button className={`inline-flex items-center gap-2 rounded-[8px] border border-primary/25 bg-primarySoft px-4 py-3 text-sm font-black text-primary transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-50 ${className}`} {...props}>
       {icon}
       {children}
     </button>
@@ -1018,6 +1113,21 @@ function GhostButton({ children, className = "", ...props }: React.ButtonHTMLAtt
   );
 }
 
+function createAssistantMessage(content: string, stage: Stage): ChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content,
+    stage,
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function copyText(value: string) {
+  if (!value) return;
+  await navigator.clipboard?.writeText(value);
+}
+
 function splitList(value: string) {
   return value
     .split(",")
@@ -1030,9 +1140,16 @@ function stageLabel(stage: string) {
 }
 
 function sourceLabel(source: PromptRecord["source"]) {
-  if (source === "ai_assisted") return "AI 보조";
+  if (source === "ai_assisted") return "AI 생성";
   if (source === "student_revision") return "학생 수정";
   return "규칙 기반";
+}
+
+function alertLabel(alertType: SafetyAlert["alertType"]) {
+  if (alertType === "paste_attempt") return "붙여넣기";
+  if (alertType === "profanity") return "부적절 표현";
+  if (alertType === "off_topic") return "주제 이탈";
+  return "무의미 입력";
 }
 
 function formatTime(value: string) {
