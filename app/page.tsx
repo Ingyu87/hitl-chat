@@ -640,6 +640,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
   const [constraintsText, setConstraintsText] = useState(session.constraints.join(", "));
   const [isDesigning, setIsDesigning] = useState(false);
   const [designStatus, setDesignStatus] = useState("");
+  const hasLessonDesign = draft.questionFlow.length > 0;
 
   function currentDraft() {
     return {
@@ -654,6 +655,14 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
   }
 
   function save() {
+    if (!currentDraft().topic.trim()) {
+      setDesignStatus("수업 주제를 먼저 입력해 주세요.");
+      return;
+    }
+    if (draft.questionFlow.length === 0) {
+      setDesignStatus("AI로 수업 설계를 눌러 질문 단계를 먼저 만들어 주세요.");
+      return;
+    }
     onSave(currentDraft());
     setView("monitoring");
   }
@@ -672,7 +681,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
         setDesignStatus(`AI API 호출 실패: ${result.error ?? "Vercel 환경변수와 Gemini 키를 확인해 주세요."}`);
         return;
       }
-      if (Array.isArray(result.questionFlow)) {
+      if (Array.isArray(result.questionFlow) && result.questionFlow.length > 0) {
         setDraft((current) => ({ ...current, questionFlow: result.questionFlow }));
         if (Array.isArray(result.requiredElements)) setRequiredText(result.requiredElements.join(", "));
         if (Array.isArray(result.constraints)) setConstraintsText(result.constraints.join(", "));
@@ -735,33 +744,41 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
             <TextField label="학생 접속 코드" value={draft.accessCode} onChange={(value) => setDraft({ ...draft, accessCode: value.toUpperCase() })} />
             <TextField label="최종 산출물 유형" value={draft.outputType} onChange={(value) => setDraft({ ...draft, outputType: value })} />
           </div>
-          <TextArea label="필수 포함 요소" value={requiredText} onChange={setRequiredText} placeholder="쉼표로 구분: 장소, 주요 대상, 문제 해결 방법" />
-          <TextArea label="금지/주의 요소" value={constraintsText} onChange={setConstraintsText} placeholder="쉼표로 구분: 주제 이탈 금지, 혐오 표현 금지" />
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-black text-ink">질문 단계</h2>
-              <div className="flex flex-wrap gap-2">
-                <SecondaryButton type="button" onClick={addQuestion} icon={<Plus size={16} />}>
-                  단계 추가
-                </SecondaryButton>
-              </div>
+          {!hasLessonDesign ? (
+            <div className="rounded-[8px] border border-dashed border-primary/35 bg-primarySoft/70 p-5 text-sm font-bold leading-7 text-primary">
+              수업 주제를 입력한 뒤 AI로 수업 설계를 누르면 필수 포함 요소, 금지/주의 요소, 질문 단계 예시가 생성됩니다.
             </div>
-            <div className="mt-3 grid gap-3">
-              {draft.questionFlow.map((item, index) => (
-                <div key={item.stage} className="grid gap-2 rounded-[8px] border border-line bg-surface p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-black text-muted">
-                      {index + 1}. {item.label}
-                    </span>
-                    <button type="button" className="text-danger" onClick={() => deleteQuestion(item.stage)} title="질문 삭제">
-                      <Trash2 size={16} />
-                    </button>
+          ) : (
+            <>
+              <TextArea label="필수 포함 요소" value={requiredText} onChange={setRequiredText} placeholder="쉼표로 구분: 장소, 주요 대상, 문제 해결 방법" />
+              <TextArea label="금지/주의 요소" value={constraintsText} onChange={setConstraintsText} placeholder="쉼표로 구분: 주제 이탈 금지, 혐오 표현 금지" />
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-lg font-black text-ink">질문 단계</h2>
+                  <div className="flex flex-wrap gap-2">
+                    <SecondaryButton type="button" onClick={addQuestion} icon={<Plus size={16} />}>
+                      단계 추가
+                    </SecondaryButton>
                   </div>
-                  <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-3 font-semibold text-ink" value={item.question} onChange={(event) => updateQuestion(item.stage, event.target.value)} />
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="mt-3 grid gap-3">
+                  {draft.questionFlow.map((item, index) => (
+                    <div key={item.stage} className="grid gap-2 rounded-[8px] border border-line bg-surface p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-black text-muted">
+                          {index + 1}. {item.label}
+                        </span>
+                        <button type="button" className="text-danger" onClick={() => deleteQuestion(item.stage)} title="질문 삭제">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                      <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-3 font-semibold text-ink" value={item.question} onChange={(event) => updateQuestion(item.stage, event.target.value)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
       <aside className="space-y-4">
