@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   });
 
   const assistantText = flow.draftPrompt && assist.used
-    ? `지금까지의 답을 모아 프롬프트 초안을 만들었어.\n\n${assist.text}\n\n수정하고 싶은 점이 있으면 말해줘. 괜찮으면 "이걸로 확정할래요"라고 답하면 돼.`
+    ? `지금까지 네가 직접 답한 내용을 바탕으로 프롬프트 초안을 만들었어.\n\n${assist.text}\n\n이 프롬프트에서 바꾸고 싶은 부분이 있을까? 더 넣고 싶은 조건, 빼고 싶은 표현, 분위기나 장면 수정이 있으면 말해줘. 괜찮으면 "이걸로 확정할래요"라고 답하면 돼.`
     : assist.text;
 
   return Response.json({

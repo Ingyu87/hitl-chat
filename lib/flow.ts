@@ -23,7 +23,7 @@ export function getNextFlow(args: {
     const draftPrompt = buildDraftPrompt(config, history);
     return {
       nextStage: "revise",
-      assistantMessage: `지금까지의 답을 모아 프롬프트 초안을 만들었어.\n\n${draftPrompt}\n\n수정하고 싶은 점이 있으면 말해줘. 괜찮으면 "이걸로 확정할래요"라고 답하면 돼.`,
+      assistantMessage: `지금까지 네가 직접 답한 내용을 바탕으로 프롬프트 초안을 만들었어.\n\n${draftPrompt}\n\n이 프롬프트에서 바꾸고 싶은 부분이 있을까? 더 넣고 싶은 조건, 빼고 싶은 표현, 분위기나 장면 수정이 있으면 말해줘. 괜찮으면 "이걸로 확정할래요"라고 답하면 돼.`,
       draftPrompt,
       shouldCreatePrompt: true,
       promptSource: "rule",
@@ -45,7 +45,7 @@ export function getNextFlow(args: {
       const draftPrompt = revisePrompt(latestPrompt, studentInput);
       return {
         nextStage: "revise",
-        assistantMessage: `수정 요청을 반영해서 새 버전을 만들었어.\n\n${draftPrompt}\n\n더 바꾸고 싶으면 말해줘. 괜찮으면 "이걸로 확정할래요"라고 답하면 돼.`,
+        assistantMessage: `네 수정 요청을 반영해서 새 버전을 만들었어.\n\n${draftPrompt}\n\n아직 어색하거나 더 고치고 싶은 부분이 있을까? 괜찮으면 "이걸로 확정할래요"라고 답하면 돼.`,
         draftPrompt,
         shouldCreatePrompt: true,
         promptSource: "student_revision",

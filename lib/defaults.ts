@@ -12,7 +12,7 @@ export const STAGES: { stage: Stage; label: string }[] = [
 
 export const DEFAULT_SESSION: SessionConfig = {
   id: "session-demo",
-  title: "우리 반 프롬프트 빌더",
+  title: "생각잇기 프롬프트",
   topic: "기후 위기를 줄이는 미래 도시",
   learningGoal: "학생이 주제에 맞는 아이디어를 구체화하고, 생성형 AI에 넣을 수 있는 명확한 프롬프트를 완성한다.",
   outputType: "이미지 생성 프롬프트",
