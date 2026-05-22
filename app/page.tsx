@@ -95,8 +95,19 @@ export default function AppPage() {
       }
 
       const role = new URLSearchParams(window.location.search).get("role");
-      if (role === "student" && !nextUi.activeStudentId) {
-        nextUi = { ...nextUi, view: "student-login", isTeacherStudentPreview: false };
+      if (role === "student") {
+        nextUi = {
+          ...nextUi,
+          view: nextUi.activeStudentId ? "student-chat" : "student-login",
+          isTeacherStudentPreview: false
+        };
+      } else if (nextUi.view === "student-login" || nextUi.view === "student-chat" || nextUi.view === "teacher-auth") {
+        nextUi = {
+          ...nextUi,
+          view: nextUi.isTeacherUnlocked ? "teacher-settings" : "home",
+          isTeacherStudentPreview: false,
+          activeStudentId: null
+        };
       }
 
       if (nextUi.view === "student-chat" && !nextData.students.some((student) => student.id === nextUi.activeStudentId)) {
