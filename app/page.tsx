@@ -900,6 +900,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
           requiredElements: nextRequired,
           constraints: nextConstraints,
           aiEnabled: true,
+          aiCallsPerStudentLimit: Math.max(currentDraft().aiCallsPerStudentLimit, 8),
           lessonDesigned: true,
           isActive: false
         };
