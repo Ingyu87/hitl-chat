@@ -9,6 +9,7 @@ import {
   Download,
   KeyRound,
   Loader2,
+  LogOut,
   LogIn,
   Monitor,
   Plus,
@@ -22,9 +23,11 @@ import {
   X
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
-import { loadAppState, saveAppState } from "@/lib/supabase-state";
+import { buildDefaultQuestionFlow, injectTopic } from "@/lib/question-flow";
+import { clearStudentRows, deleteStudentRow, getCurrentTeacher, loadStudentsForSession, loadTeacherData, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
@@ -47,7 +50,6 @@ const DATA_STORAGE_KEY = "hitl-chat-state-v2";
 const UI_STORAGE_KEY = "hitl-chat-ui-v2";
 const APP_NAME = "생각잇기 프롬프트";
 const APP_SUBTITLE = "학생 답변 기반 이미지 생성 프롬프트 수업 도구";
-const TEACHER_PIN = process.env.NEXT_PUBLIC_TEACHER_PIN ?? "1234";
 
 const initialData: AppData = {
   session: DEFAULT_SESSION,
@@ -66,6 +68,7 @@ export default function AppPage() {
   const [data, setData] = useState<AppData>(initialData);
   const [ui, setUi] = useState<UiState>(initialUi);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [teacherUser, setTeacherUser] = useState<User | null>(null);
   const activeStudent = data.students.find((student) => student.id === ui.activeStudentId) ?? null;
 
   useEffect(() => {
@@ -89,9 +92,11 @@ export default function AppPage() {
         nextUi = initialUi;
       }
 
-      const remoteData = await loadAppState<AppData>();
-      if (remoteData?.session && remoteData?.students) {
-        nextData = remoteData;
+      const user = await getCurrentTeacher();
+      if (user) {
+        setTeacherUser(user);
+        nextData = await loadTeacherData(user);
+        nextUi = { ...nextUi, isTeacherUnlocked: true };
       }
 
       nextData = migrateSavedData(nextData);
@@ -134,12 +139,19 @@ export default function AppPage() {
     if (!isLoaded) return;
 
     window.localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(data));
-    const saveTimer = window.setTimeout(() => {
-      void saveAppState(data);
-    }, 500);
-
-    return () => window.clearTimeout(saveTimer);
+    return;
   }, [data, isLoaded]);
+
+  useEffect(() => {
+    if (!isLoaded || !teacherUser) return;
+
+    const pollTimer = window.setInterval(async () => {
+      const students = await loadStudentsForSession(data.session.id);
+      setData((current) => ({ ...current, students }));
+    }, 3000);
+
+    return () => window.clearInterval(pollTimer);
+  }, [data.session.id, isLoaded, teacherUser]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -151,11 +163,39 @@ export default function AppPage() {
   }
 
   function updateSession(session: SessionConfig) {
-    setData({ session, students: [] });
-    setUi((current) => ({ ...current, activeStudentId: null }));
+    setData((current) => {
+      const now = new Date().toISOString();
+      const previousRevision = current.session.revision ?? 1;
+      const nextSession = {
+        ...session,
+        revision: previousRevision + 1,
+        updatedAt: now
+      };
+
+      if (teacherUser) {
+        void saveTeacherSession(nextSession, teacherUser).then((savedSession) => {
+          setData((latest) => ({ ...latest, session: savedSession }));
+        });
+      }
+
+      return {
+        session: {
+          ...nextSession
+        },
+        students: current.students
+      };
+    });
   }
 
   function upsertStudent(student: StudentWorkspace) {
+    if (student.sessionId) {
+      void fetch("/api/student/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student })
+      });
+    }
+
     setData((current) => ({
       ...current,
       students: current.students.some((item) => item.id === student.id)
@@ -173,6 +213,7 @@ export default function AppPage() {
           ? {
               ...student,
               currentStage: "orient",
+              joinedRevision: current.session.revision ?? 1,
               lastActiveAt: now,
               messages: [createAssistantMessage(getInitialAssistantMessage(current.session), "orient")],
               prompts: [],
@@ -186,11 +227,13 @@ export default function AppPage() {
   }
 
   function deleteStudent(studentId: string) {
+    void deleteStudentRow(studentId);
     setData((current) => ({ ...current, students: current.students.filter((student) => student.id !== studentId) }));
     setUi((current) => ({ ...current, activeStudentId: current.activeStudentId === studentId ? null : current.activeStudentId }));
   }
 
   function clearStudents() {
+    void clearStudentRows(data.session.id);
     setData((current) => ({ ...current, students: [] }));
     setUi((current) => ({ ...current, activeStudentId: null }));
   }
@@ -201,7 +244,7 @@ export default function AppPage() {
   }
 
   function openTeacherView(target: TeacherView) {
-    if (ui.isTeacherUnlocked) {
+    if (teacherUser) {
       setUi((current) => ({ ...current, view: target, isTeacherStudentPreview: false }));
       return;
     }
@@ -209,10 +252,20 @@ export default function AppPage() {
     setUi((current) => ({ ...current, pendingTeacherView: target, view: "teacher-auth", isTeacherStudentPreview: false }));
   }
 
-  function unlockTeacher(pin: string) {
-    if (pin.trim() !== TEACHER_PIN) return false;
+  async function unlockTeacher(email: string, password: string, mode: "sign-in" | "sign-up") {
+    const user = mode === "sign-up" ? await signUpTeacher(email, password) : await signInTeacher(email, password);
+    if (!user) return false;
+    const nextData = migrateSavedData(await loadTeacherData(user));
+    setTeacherUser(user);
+    setData(nextData);
     setUi((current) => ({ ...current, isTeacherUnlocked: true, view: current.pendingTeacherView, isTeacherStudentPreview: false }));
     return true;
+  }
+
+  async function logoutTeacher() {
+    await signOutTeacher();
+    setTeacherUser(null);
+    setUi((current) => ({ ...current, isTeacherUnlocked: false, view: "home", activeStudentId: null, isTeacherStudentPreview: false }));
   }
 
   function openStudentPreview() {
@@ -231,13 +284,14 @@ export default function AppPage() {
 
   return (
     <main className="app-shell">
-      <TopBar view={ui.view} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} isTeacherStudentPreview={ui.isTeacherStudentPreview} />
+      <TopBar view={ui.view} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} isTeacherStudentPreview={ui.isTeacherStudentPreview} teacherUser={teacherUser} onLogout={() => void logoutTeacher()} />
       {ui.view === "home" && <HomeView session={data.session} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} resetDemo={resetDemo} />}
       {ui.view === "student-login" && (
         <StudentLoginView
           session={data.session}
           students={data.students}
-          onEnter={(student) => {
+          onEnter={(student, session) => {
+            if (session) setData((current) => ({ ...current, session }));
             upsertStudent(student);
             setUi((current) => ({ ...current, activeStudentId: student.id, view: "student-chat" }));
           }}
@@ -253,6 +307,7 @@ export default function AppPage() {
           students={data.students}
           setView={setView}
           openTeacherView={openTeacherView}
+          onUpdateSession={updateSession}
           onUpdateStudent={upsertStudent}
           onDeleteStudent={deleteStudent}
           onClearStudents={clearStudents}
@@ -263,18 +318,54 @@ export default function AppPage() {
 }
 
 function migrateSavedData(data: AppData): AppData {
-  if (data.session.lessonDesigned) return data;
-
   return {
     ...data,
     session: {
+      ...DEFAULT_SESSION,
       ...data.session,
-      requiredElements: [],
-      constraints: [],
-      questionFlow: [],
-      lessonDesigned: false
-    }
+      requiredElements: data.session.requiredElements ?? [],
+      constraints: data.session.constraints ?? [],
+      questionFlow: data.session.questionFlow ?? [],
+      lessonDesigned: Boolean(data.session.lessonDesigned && data.session.questionFlow?.length),
+      revision: data.session.revision ?? 1,
+      updatedAt: data.session.updatedAt ?? new Date(0).toISOString()
+    },
+    students: data.students ?? []
   };
+}
+
+function buildStudentLink(accessCode: string) {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.origin);
+  url.searchParams.set("role", "student");
+  url.searchParams.set("code", accessCode);
+  return url.toString();
+}
+
+function previewQuestion(question: string, session: SessionConfig) {
+  return injectTopic(question, session);
+}
+
+function parseTime(value?: string) {
+  const time = value ? Date.parse(value) : 0;
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function mergeRemoteData(current: AppData, remote: AppData): AppData {
+  const currentSessionTime = parseTime(current.session.updatedAt);
+  const remoteSessionTime = parseTime(remote.session.updatedAt);
+  const session = remoteSessionTime > currentSessionTime ? remote.session : current.session;
+  const studentsById = new Map<string, StudentWorkspace>();
+
+  for (const student of current.students) studentsById.set(student.id, student);
+  for (const remoteStudent of remote.students) {
+    const localStudent = studentsById.get(remoteStudent.id);
+    if (!localStudent || parseTime(remoteStudent.lastActiveAt) >= parseTime(localStudent.lastActiveAt)) {
+      studentsById.set(remoteStudent.id, remoteStudent);
+    }
+  }
+
+  return { session, students: Array.from(studentsById.values()) };
 }
 
 function TopBar({
@@ -282,13 +373,17 @@ function TopBar({
   setView,
   openTeacherView,
   openStudentPreview,
-  isTeacherStudentPreview
+  isTeacherStudentPreview,
+  teacherUser,
+  onLogout
 }: {
   view: View;
   setView: (view: View) => void;
   openTeacherView: (view: TeacherView) => void;
   openStudentPreview: () => void;
   isTeacherStudentPreview: boolean;
+  teacherUser: User | null;
+  onLogout: () => void;
 }) {
   const isStudentView = view === "student-login" || view === "student-chat";
   const shouldHideTeacherNav = isStudentView && !isTeacherStudentPreview;
@@ -314,8 +409,14 @@ function TopBar({
               모니터링
             </NavButton>
             <NavButton active={isTeacherStudentPreview && isStudentView} onClick={openStudentPreview}>
-              학생 입장 확인
+              교사용 학생 미리보기
             </NavButton>
+            {teacherUser && (
+              <button type="button" className="inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-black text-muted hover:bg-surface" onClick={onLogout} title="로그아웃">
+                <LogOut size={16} />
+                <span>로그아웃</span>
+              </button>
+            )}
           </nav>
         )}
       </div>
@@ -336,7 +437,8 @@ function HomeView({
   openStudentPreview: () => void;
   resetDemo: () => void;
 }) {
-  const studentLink = typeof window === "undefined" ? "" : `${window.location.origin}?role=student`;
+  const studentLink = buildStudentLink(session.accessCode);
+  const isStudentLinkReady = Boolean(session.lessonDesigned && session.isActive && session.questionFlow.length > 0);
 
   return (
     <section className="page-band grid gap-8 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
@@ -361,17 +463,17 @@ function HomeView({
       <div className="grid gap-4">
         <InfoPanel title="학생 안내 정보" icon={<ClipboardList size={20} />}>
           <dl className="grid gap-3 text-sm">
-            <InfoRow label="학생 입장 링크" value={studentLink || "?role=student"} />
+            <InfoRow label="학생 입장 링크" value={isStudentLinkReady ? studentLink : "질문 흐름 승인 후 생성됩니다"} />
             <InfoRow label="학생 접속 코드" value={session.accessCode} />
             <InfoRow label="수업 주제" value={session.topic} />
             <InfoRow label="AI 역할" value="질문 진행, 안전 판단, 프롬프트 생성, 교사용 분석" />
           </dl>
           <div className="mt-4 flex flex-wrap gap-2">
-            <SecondaryButton type="button" onClick={() => void copyText(studentLink)} icon={<KeyRound size={18} />}>
+            <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<KeyRound size={18} />}>
               학생 링크 복사
             </SecondaryButton>
             <SecondaryButton type="button" onClick={openStudentPreview} icon={<LogIn size={18} />}>
-              학생 화면 미리보기
+              교사용 학생 미리보기
             </SecondaryButton>
           </div>
         </InfoPanel>
@@ -380,15 +482,50 @@ function HomeView({
   );
 }
 
-function StudentLoginView({ session, students, onEnter }: { session: SessionConfig; students: StudentWorkspace[]; onEnter: (student: StudentWorkspace) => void }) {
+function StudentLoginView({ session, students, onEnter }: { session: SessionConfig; students: StudentWorkspace[]; onEnter: (student: StudentWorkspace, session?: SessionConfig) => void }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState(session.accessCode);
   const [error, setError] = useState("");
 
-  function submit(event: FormEvent) {
+  useEffect(() => {
+    const urlCode = new URLSearchParams(window.location.search).get("code");
+    setCode((current) => (urlCode || current || session.accessCode).toUpperCase());
+  }, [session.accessCode]);
+
+  async function submit(event: FormEvent) {
     event.preventDefault();
     const normalizedCode = code.trim().toUpperCase();
     const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      setError("이름을 입력해주세요.");
+      return;
+    }
+
+    const response = await fetch("/api/student/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: normalizedCode, name: trimmedName })
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setError(result.error ?? "수업에 입장할 수 없어요.");
+      return;
+    }
+
+    onEnter(result.student as StudentWorkspace, result.session as SessionConfig);
+    return;
+
+    if (!session.isActive) {
+      setError("수업이 아직 시작되지 않았어요. 선생님이 수업을 시작하면 다시 시도해 주세요.");
+      return;
+    }
+
+    if (!session.lessonDesigned || session.questionFlow.length === 0) {
+      setError("선생님이 AI 질문 초안을 승인한 뒤 입장할 수 있어요.");
+      return;
+    }
 
     if (normalizedCode !== session.accessCode.toUpperCase()) {
       setError("접속 코드가 맞지 않아요. 선생님이 알려준 코드를 다시 확인해줘.");
@@ -402,12 +539,17 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
 
     const existing = students.find((student) => student.name === trimmedName && student.accessCode === normalizedCode);
     const now = new Date().toISOString();
+    const sessionRevision = session.revision ?? 1;
+    const shouldResetExisting = Boolean(existing) && (existing as StudentWorkspace).joinedRevision !== sessionRevision;
     const student: StudentWorkspace =
-      existing ??
+      existing && !shouldResetExisting
+        ? (existing as StudentWorkspace)
+        :
       {
-        id: crypto.randomUUID(),
+        id: existing?.id ?? crypto.randomUUID(),
         name: trimmedName,
         accessCode: normalizedCode,
+        joinedRevision: sessionRevision,
         currentStage: "orient",
         lastActiveAt: now,
         messages: [createAssistantMessage(getInitialAssistantMessage(session), "orient")],
@@ -481,7 +623,8 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           message: trimmed,
           currentStage: student.currentStage,
           latestPrompt: latestPrompt?.content,
-          loopCount: latestPrompt?.loopCount ?? 0
+          loopCount: latestPrompt?.loopCount ?? 0,
+          aiCallCount: student.aiLogs.filter((log) => log.used).length
         })
       });
 
@@ -583,6 +726,12 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
               addPasteAlert(event.clipboardData.getData("text"));
               event.preventDefault();
             }}
+            onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+                addPasteAlert("keyboard paste");
+                event.preventDefault();
+              }
+            }}
             onContextMenu={(event) => event.preventDefault()}
             placeholder={student.currentStage === "revise" ? "수정할 점을 쓰거나, 이걸로 확정할래요 라고 입력해줘." : "네 생각을 직접 적어줘."}
             disabled={student.currentStage === "final"}
@@ -620,14 +769,23 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   );
 }
 
-function TeacherAuthView({ onUnlock }: { onUnlock: (pin: string) => boolean }) {
+function TeacherAuthView({ onUnlock }: { onUnlock: (email: string, password: string, mode: "sign-in" | "sign-up") => Promise<boolean> }) {
+  const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [error, setError] = useState("");
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!onUnlock(pin)) {
-      setError("교사용 PIN이 맞지 않습니다.");
+    setError("");
+    try {
+      const ok = await onUnlock(email, pin, mode);
+      if (!ok) {
+        setError("이메일 또는 비밀번호를 확인해주세요.");
+        setPin("");
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "로그인에 실패했습니다.");
       setPin("");
     }
   }
@@ -639,13 +797,22 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (pin: string) => boolean }) {
           <UserRound size={24} />
         </span>
         <h1 className="mt-5 text-3xl font-black text-ink">교사 입장</h1>
-        <p className="mt-2 font-semibold leading-7 text-muted">수업 설정과 모니터링은 교사용 PIN을 입력해야 열 수 있습니다. 새로고침 후에도 이 상태는 유지됩니다.</p>
-        <div className="mt-6">
-          <TextField label="교사용 PIN" value={pin} onChange={setPin} placeholder="교사용 PIN 입력" />
+        <p className="mt-2 font-semibold leading-7 text-muted">교사 이메일과 비밀번호로 로그인하면 수업 설정과 모니터링을 사용할 수 있습니다.</p>
+        <div className="mt-6 grid gap-4">
+          <TextField label="교사 이메일" value={email} onChange={setEmail} placeholder="teacher@example.com" />
+          <TextField label="비밀번호" value={pin} onChange={setPin} placeholder="비밀번호 입력" type="password" />
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className={`rounded-[8px] border px-3 py-3 text-sm font-black ${mode === "sign-in" ? "border-primary bg-primarySoft text-primary" : "border-line bg-white text-muted"}`} onClick={() => setMode("sign-in")}>
+              로그인
+            </button>
+            <button type="button" className={`rounded-[8px] border px-3 py-3 text-sm font-black ${mode === "sign-up" ? "border-primary bg-primarySoft text-primary" : "border-line bg-white text-muted"}`} onClick={() => setMode("sign-up")}>
+              회원가입
+            </button>
+          </div>
         </div>
         {error && <p className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{error}</p>}
         <PrimaryButton type="submit" className="mt-6 w-full justify-center" icon={<LogIn size={18} />}>
-          교사 콘솔 열기
+          {mode === "sign-up" ? "회원가입" : "로그인"}
         </PrimaryButton>
       </form>
     </section>
@@ -664,9 +831,6 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
     return {
       ...draft,
       title: draft.topic,
-      learningGoal: DEFAULT_SESSION.learningGoal,
-      maxLoopCount: DEFAULT_SESSION.maxLoopCount,
-      aiEnabled: true,
       requiredElements: splitList(requiredText),
       constraints: splitList(constraintsText),
       lessonDesigned: Boolean(draft.lessonDesigned && draft.questionFlow.length > 0)
@@ -682,7 +846,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       setDesignStatus("AI로 수업 설계를 눌러 질문 단계를 먼저 만들어 주세요.");
       return;
     }
-    onSave(currentDraft());
+    onSave({ ...currentDraft(), lessonDesigned: true, isActive: true });
     setView("monitoring");
   }
 
@@ -708,13 +872,13 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
           questionFlow: result.questionFlow,
           requiredElements: nextRequired,
           constraints: nextConstraints,
-          lessonDesigned: true
+          lessonDesigned: true,
+          isActive: false
         };
         setDraft(nextSession);
         setRequiredText(nextRequired.join(", "));
         setConstraintsText(nextConstraints.join(", "));
-        onSave(nextSession);
-        setDesignStatus(result.aiUsed ? "Gemini API로 수업설계를 반영하고 저장했습니다." : "수업설계를 반영하고 저장했습니다.");
+        setDesignStatus(result.aiUsed ? "AI가 질문 초안을 만들었습니다. 교사가 수정, 순서 변경, 추가를 점검한 뒤 승인하면 학생 링크가 생성됩니다." : "기본 질문 초안을 만들었습니다. 교사가 점검한 뒤 승인하면 학생 링크가 생성됩니다.");
       } else {
         setDesignStatus("수업설계 결과를 가져오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
       }
@@ -736,6 +900,17 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
     setDraft((current) => ({ ...current, questionFlow: current.questionFlow.filter((item) => item.stage !== stage) }));
   }
 
+  function moveQuestion(stage: Stage, direction: -1 | 1) {
+    setDraft((current) => {
+      const index = current.questionFlow.findIndex((item) => item.stage === stage);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.questionFlow.length) return current;
+      const questionFlow = [...current.questionFlow];
+      [questionFlow[index], questionFlow[nextIndex]] = [questionFlow[nextIndex], questionFlow[index]];
+      return { ...current, questionFlow };
+    });
+  }
+
   function addQuestion() {
     const missing = STAGES.find((stage) => !draft.questionFlow.some((item) => item.stage === stage.stage));
     if (!missing) {
@@ -748,6 +923,29 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       questionFlow: [...current.questionFlow, { ...missing, question: "학생의 답변을 바탕으로 다음 생각을 물어보는 질문을 입력하세요." }]
     }));
     setDesignStatus(`${missing.label} 단계를 추가했습니다.`);
+  }
+
+  function applyDefaultFlow() {
+    const nextDraft = currentDraft();
+    const nextSession: SessionConfig = {
+      ...nextDraft,
+      questionFlow: buildDefaultQuestionFlow(nextDraft),
+      lessonDesigned: true,
+      isActive: false
+    };
+    setDraft(nextSession);
+    setDesignStatus("현재 주제를 반영한 기본 질문 흐름을 적용했습니다.");
+  }
+
+  function updateTopic(value: string) {
+    setDraft((current) => ({
+      ...current,
+      topic: value,
+      lessonDesigned: false
+    }));
+    if (draft.questionFlow.length > 0) {
+      setDesignStatus("주제가 바뀌었습니다. AI로 수업 설계하거나 기본 질문 흐름을 다시 적용해 주세요.");
+    }
   }
 
   return (
@@ -769,10 +967,19 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
         </div>
         {designStatus && <p className="mt-4 rounded-[8px] bg-primarySoft px-3 py-2 text-sm font-bold text-primary">{designStatus}</p>}
         <div className="mt-6 grid gap-5">
-          <TextField label="수업 주제" value={draft.topic} onChange={(value) => setDraft({ ...draft, topic: value })} />
+          <TextField label="수업 주제" value={draft.topic} onChange={updateTopic} />
+          <TextArea label="학습 목표" value={draft.learningGoal} onChange={(value) => setDraft({ ...draft, learningGoal: value })} />
           <div className="grid gap-4 md:grid-cols-2">
             <TextField label="학생 접속 코드" value={draft.accessCode} onChange={(value) => setDraft({ ...draft, accessCode: value.toUpperCase() })} />
             <TextField label="최종 산출물 유형" value={draft.outputType} onChange={(value) => setDraft({ ...draft, outputType: value })} />
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <NumberField label="최대 수정 횟수" value={draft.maxLoopCount} min={1} max={8} onChange={(value) => setDraft({ ...draft, maxLoopCount: value })} />
+            <NumberField label="학생당 AI 호출 한도" value={draft.aiCallsPerStudentLimit} min={0} max={20} onChange={(value) => setDraft({ ...draft, aiCallsPerStudentLimit: value })} />
+            <label className="flex items-center gap-3 rounded-[8px] border border-line bg-surface px-3 py-3 text-sm font-black text-muted">
+              <input type="checkbox" checked={draft.aiEnabled} onChange={(event) => setDraft({ ...draft, aiEnabled: event.target.checked })} />
+              AI 문장 보조 사용
+            </label>
           </div>
           {!hasLessonDesign ? (
             <div className="rounded-[8px] border border-dashed border-primary/35 bg-primarySoft/70 p-5 text-sm font-bold leading-7 text-primary">
@@ -798,11 +1005,30 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
                         <span className="text-sm font-black text-muted">
                           {index + 1}. {item.label}
                         </span>
-                        <button type="button" className="text-danger" onClick={() => deleteQuestion(item.stage)} title="질문 삭제">
-                          <Trash2 size={16} />
-                        </button>
+                        <span className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="rounded-[8px] border border-line bg-white px-2 py-1 text-xs font-black text-muted disabled:opacity-40"
+                            onClick={() => moveQuestion(item.stage, -1)}
+                            disabled={index === 0}
+                          >
+                            위로
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-[8px] border border-line bg-white px-2 py-1 text-xs font-black text-muted disabled:opacity-40"
+                            onClick={() => moveQuestion(item.stage, 1)}
+                            disabled={index === draft.questionFlow.length - 1}
+                          >
+                            아래로
+                          </button>
+                          <button type="button" className="text-danger" onClick={() => deleteQuestion(item.stage)} title="질문 삭제">
+                            <Trash2 size={16} />
+                          </button>
+                        </span>
                       </div>
                       <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-3 font-semibold text-ink" value={item.question} onChange={(event) => updateQuestion(item.stage, event.target.value)} />
+                      <p className="text-xs font-bold leading-5 text-muted">학생에게 보이는 문장: {previewQuestion(item.question, currentDraft())}</p>
                     </div>
                   ))}
                 </div>
@@ -832,6 +1058,7 @@ function MonitoringView({
   students,
   setView,
   openTeacherView,
+  onUpdateSession,
   onUpdateStudent,
   onDeleteStudent,
   onClearStudents
@@ -840,12 +1067,15 @@ function MonitoringView({
   students: StudentWorkspace[];
   setView: (view: View) => void;
   openTeacherView: (view: TeacherView) => void;
+  onUpdateSession: (session: SessionConfig) => void;
   onUpdateStudent: (student: StudentWorkspace) => void;
   onDeleteStudent: (studentId: string) => void;
   onClearStudents: () => void;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const studentLink = buildStudentLink(session.accessCode);
+  const isStudentLinkReady = Boolean(session.lessonDesigned && session.isActive && session.questionFlow.length > 0);
   const selectedStudent = students.find((student) => student.id === selectedStudentId) ?? null;
   const stats = useMemo(() => {
     const finalCount = students.filter((student) => student.prompts.some((prompt) => prompt.isFinal)).length;
@@ -886,6 +1116,14 @@ function MonitoringView({
     }
   }
 
+  function toggleSessionActive() {
+    if (!session.lessonDesigned || session.questionFlow.length === 0) {
+      window.alert("AI 질문 초안을 승인한 뒤 수업을 시작할 수 있어요.");
+      return;
+    }
+    onUpdateSession({ ...session, isActive: !session.isActive });
+  }
+
   return (
     <section className="page-band py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -896,6 +1134,9 @@ function MonitoringView({
         <div className="flex flex-wrap gap-2">
           <SecondaryButton onClick={() => openTeacherView("teacher-settings")} icon={<Settings size={18} />}>
             설정 수정
+          </SecondaryButton>
+          <SecondaryButton onClick={toggleSessionActive} icon={<ShieldCheck size={18} />}>
+            {session.isActive ? "수업 종료" : "수업 시작"}
           </SecondaryButton>
           <SecondaryButton onClick={onClearStudents} icon={<Trash2 size={18} />}>
             전체 학생 데이터 삭제
@@ -910,6 +1151,20 @@ function MonitoringView({
         <StatCard icon={<Check size={20} />} label="최종 완료" value={`${stats.finalCount}명`} />
         <StatCard icon={<Sparkles size={20} />} label="분석 완료" value={`${stats.analysisCount}명`} />
         <StatCard icon={<AlertTriangle size={20} />} label="안전 경고" value={`${stats.alertCount}건`} />
+      </div>
+      <div className="mt-5">
+        <InfoPanel title="학생 접속 정보" icon={<KeyRound size={20} />}>
+          <dl className="grid gap-3 text-sm md:grid-cols-[1.5fr_0.5fr]">
+            <InfoRow label="학생 입장 링크" value={isStudentLinkReady ? studentLink : "AI 질문 초안 승인 후 생성됩니다"} />
+            <InfoRow label="접속 코드" value={session.accessCode} />
+          </dl>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<Copy size={18} />}>
+              링크 복사
+            </SecondaryButton>
+            {!isStudentLinkReady && <span className="rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-black text-danger">질문 흐름을 승인하고 수업을 시작해야 학생 링크가 활성화됩니다.</span>}
+          </div>
+        </InfoPanel>
       </div>
       <div className="mt-5 overflow-hidden rounded-[8px] border border-line bg-white shadow-soft">
         <div className="grid grid-cols-[1.1fr_1fr_0.8fr_0.8fr_1.4fr_0.5fr] gap-3 border-b border-line bg-surface px-4 py-3 text-sm font-black text-muted max-lg:hidden">
@@ -1003,7 +1258,7 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
                 {student.messages.map((message) => (
                   <div key={message.id} className={`rounded-[8px] p-3 ${message.role === "user" ? "bg-primarySoft" : "bg-surface"}`}>
                     <p className="text-xs font-black text-muted">
-                      {message.role === "user" ? "학생" : "챗봇"} · {stageLabel(message.stage)} · {formatTime(message.createdAt)}
+                      {message.role === "user" ? "학생" : "챗봇"} � {stageLabel(message.stage)} � {formatTime(message.createdAt)}
                     </p>
                     <p className="mt-1 whitespace-pre-wrap text-sm font-semibold leading-6 text-ink">{message.content}</p>
                   </div>
@@ -1015,7 +1270,7 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
                 <div className="space-y-2">
                   {student.safetyAlerts.map((alert) => (
                     <div key={alert.id} className="rounded-[8px] bg-dangerSoft p-3 text-sm font-semibold leading-6 text-danger">
-                      <p className="font-black">{alertLabel(alert.alertType)} · {formatTime(alert.createdAt)}</p>
+                      <p className="font-black">{alertLabel(alert.alertType)} � {formatTime(alert.createdAt)}</p>
                       <p>입력: {alert.attemptedContent}</p>
                       {alert.reason && <p>판단 사유: {alert.reason}</p>}
                     </div>
@@ -1078,7 +1333,7 @@ function PromptCopyBox({ prompt, finalLabel }: { prompt: PromptRecord; finalLabe
   return (
     <button type="button" className="w-full rounded-[8px] bg-surface p-3 text-left transition hover:bg-primarySoft" onClick={() => void copyPrompt()} title="클릭해서 복사">
       <p className="mb-2 flex items-center justify-between gap-2 text-xs font-black text-muted">
-        <span>{finalLabel ? "최종 승인 완료" : `초안 v${prompt.version}`} · {sourceLabel(prompt.source)}</span>
+        <span>{finalLabel ? "최종 승인 완료" : `초안 v${prompt.version}`} � {sourceLabel(prompt.source)}</span>
         <span className="inline-flex items-center gap-1 text-primary">
           <Copy size={14} /> {copied ? "복사됨" : "클릭 복사"}
         </span>
@@ -1165,11 +1420,12 @@ function NavButton({ active, children, onClick }: { active: boolean; children: R
   );
 }
 
-function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+function TextField({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: "text" | "password" | "email" }) {
+  const inputType = label.includes("PIN") ? "password" : type;
   return (
     <label className="grid gap-2">
       <span className="text-sm font-black text-muted">{label}</span>
-      <input className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <input type={inputType} className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
     </label>
   );
 }

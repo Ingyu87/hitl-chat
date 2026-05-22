@@ -21,6 +21,8 @@ export type SessionConfig = {
   aiCallsPerStudentLimit: number;
   accessCode: string;
   isActive: boolean;
+  revision?: number;
+  updatedAt?: string;
 };
 
 export type ChatMessage = {
@@ -72,8 +74,10 @@ export type AiAssistLog = {
 
 export type StudentWorkspace = {
   id: string;
+  sessionId?: string;
   name: string;
   accessCode: string;
+  joinedRevision?: number;
   currentStage: Stage;
   lastActiveAt: string;
   messages: ChatMessage[];

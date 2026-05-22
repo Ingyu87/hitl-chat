@@ -1,9 +1,8 @@
-export async function callGeminiText(prompt: string, options?: { temperature?: number; maxOutputTokens?: number }) {
+export async function callGeminiText(prompt: string, options?: { temperature?: number; maxOutputTokens?: number; responseMimeType?: string; responseSchema?: unknown }) {
   const apiKey =
     process.env.GEMINI_API_KEY ||
     process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     throw new Error("Missing Gemini API key. Set GEMINI_API_KEY in Vercel Environment Variables.");
   }
@@ -16,7 +15,9 @@ export async function callGeminiText(prompt: string, options?: { temperature?: n
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: options?.temperature ?? 0.4,
-        maxOutputTokens: options?.maxOutputTokens ?? 900
+        maxOutputTokens: options?.maxOutputTokens ?? 900,
+        responseMimeType: options?.responseMimeType,
+        responseSchema: options?.responseSchema
       }
     })
   });
