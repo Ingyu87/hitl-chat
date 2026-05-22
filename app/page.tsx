@@ -886,6 +886,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
           questionFlow: result.questionFlow,
           requiredElements: nextRequired,
           constraints: nextConstraints,
+          aiEnabled: true,
           lessonDesigned: true,
           isActive: false
         };

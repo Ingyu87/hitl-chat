@@ -113,7 +113,7 @@ function createAiLog(purpose: AiAssistLog["purpose"], stage: Stage, used: boolea
 
 function needsMoreSpecificAnswer(input: string) {
   const normalized = input.trim().replace(/\s/g, "").toLowerCase();
-  return /^(몰라|모름|없음|아무거나|대충|글쎄|잘모르겠어|잘모름|응|네|ㅇㅇ|ㄴㄴ|\?+|!+)$/.test(normalized) || normalized.length < 2;
+  return /^(몰라|모름|없음|아무거나|아무생각없어|아무생각이없어|생각없어|대충|글쎄|잘모르겠어|잘모름|누구야|너누구야|응|네|ㅇㅇ|ㄴㄴ|\?+|!+)$/.test(normalized) || normalized.length < 2;
 }
 
 function buildRetryMessage(config: SessionConfig, currentStage: Stage) {

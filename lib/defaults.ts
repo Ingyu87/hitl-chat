@@ -17,7 +17,7 @@ export const DEFAULT_SESSION: SessionConfig = {
   questionFlow: [],
   lessonDesigned: false,
   maxLoopCount: 3,
-  aiEnabled: false,
+  aiEnabled: true,
   aiProvider: "gemini",
   aiUsagePolicy: "questions_and_prompts",
   aiCallsPerStudentLimit: 8,
