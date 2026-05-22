@@ -741,9 +741,6 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-black text-ink">질문 단계</h2>
               <div className="flex flex-wrap gap-2">
-                <SecondaryButton type="button" onClick={() => void designQuestions("refine")} disabled={isDesigning || !draft.topic.trim()} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
-                  AI로 현재 설계 다듬기
-                </SecondaryButton>
                 <SecondaryButton type="button" onClick={addQuestion} icon={<Plus size={16} />}>
                   단계 추가
                 </SecondaryButton>
