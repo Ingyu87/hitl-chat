@@ -1,7 +1,7 @@
 import type { SafetyAlert } from "@/lib/types";
 
-const PROFANITY = [/시발|씨발|개새끼|병신|지랄|fuck|shit|bitch/gi];
-const SEXUAL = [/섹스|포르노|야동|음란/gi];
+const PROFANITY = [/씨발|시발|병신|좆|개새끼|fuck|shit|bitch/gi];
+const SEXUAL = [/섹스|자위|성관계|야동/gi];
 
 export function checkSafety(input: string): { isSafe: boolean; alertType?: SafetyAlert["alertType"]; message?: string } {
   const trimmed = input.trim();
@@ -10,7 +10,7 @@ export function checkSafety(input: string): { isSafe: boolean; alertType?: Safet
     return {
       isSafe: false,
       alertType: "meaningless",
-      message: "조금 더 구체적으로 적어볼까요? 오늘 주제 안에서 떠오른 생각을 한 문장으로 써 주세요."
+      message: "아직 답변이 너무 짧거나 의미를 파악하기 어려워요. 떠오르는 장면이나 이유를 한 가지만 더 말해줄래요?"
     };
   }
 
@@ -18,7 +18,7 @@ export function checkSafety(input: string): { isSafe: boolean; alertType?: Safet
     return {
       isSafe: false,
       alertType: "profanity",
-      message: "수업에 맞지 않는 표현이 있어요. 선생님이 정한 주제 안에서 다시 적어볼까요?"
+      message: "수업과 맞지 않는 표현이 들어갔어요. 표현을 바꿔서 수업 주제와 관련된 생각을 다시 말해볼까요?"
     };
   }
 

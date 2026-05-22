@@ -666,6 +666,18 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         return;
       }
 
+      const nextSafetyAlerts = [...student.safetyAlerts];
+      if (result.warning) {
+        nextSafetyAlerts.push({
+          id: crypto.randomUUID(),
+          alertType: result.warning.alertType,
+          attemptedContent: trimmed,
+          reason: result.warning.reason,
+          isRead: false,
+          createdAt: now
+        });
+      }
+
       const prompts = [...student.prompts];
       if (result.shouldCreatePrompt && result.draftPrompt) {
         prompts.push({
@@ -689,6 +701,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         currentStage: result.stage,
         messages: nextMessages,
         prompts,
+        safetyAlerts: nextSafetyAlerts,
         aiLogs: result.aiLog ? [...student.aiLogs, result.aiLog as AiAssistLog] : student.aiLogs,
         lastActiveAt: now
       });
