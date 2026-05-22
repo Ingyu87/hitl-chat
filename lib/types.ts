@@ -45,7 +45,7 @@ export type PromptRecord = {
 
 export type SafetyAlert = {
   id: string;
-  alertType: "paste_attempt" | "profanity" | "off_topic" | "meaningless";
+  alertType: "paste_attempt" | "profanity" | "sexual" | "abusive" | "off_topic" | "meaningless";
   attemptedContent: string;
   reason?: string;
   isRead: boolean;

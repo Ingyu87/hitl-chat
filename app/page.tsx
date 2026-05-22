@@ -206,11 +206,12 @@ export default function AppPage() {
 
   function resetStudent(studentId: string) {
     const now = new Date().toISOString();
+    let nextStudent: StudentWorkspace | null = null;
     setData((current) => ({
       ...current,
       students: current.students.map((student) =>
         student.id === studentId
-          ? {
+          ? (nextStudent = {
               ...student,
               currentStage: "orient",
               joinedRevision: current.session.revision ?? 1,
@@ -220,10 +221,13 @@ export default function AppPage() {
               safetyAlerts: [],
               aiLogs: [],
               analysis: undefined
-            }
+            })
           : student
       )
     }));
+    window.setTimeout(() => {
+      if (nextStudent) upsertStudent(nextStudent);
+    }, 0);
   }
 
   function deleteStudent(studentId: string) {
@@ -358,6 +362,28 @@ function buildStudentLink(accessCode: string) {
 
 function previewQuestion(question: string, session: SessionConfig) {
   return injectTopic(question, session);
+}
+
+function getTeacherUnlockCode(session: SessionConfig) {
+  return `${session.accessCode}-OK`;
+}
+
+function getLastTeacherUnlockTime(student: StudentWorkspace) {
+  return Math.max(
+    0,
+    ...student.messages
+      .filter((message) => message.role === "system" && message.content === "TEACHER_UNLOCK")
+      .map((message) => Date.parse(message.createdAt) || 0)
+  );
+}
+
+function getActiveSafetyAlerts(student: StudentWorkspace) {
+  const unlockedAt = getLastTeacherUnlockTime(student);
+  return student.safetyAlerts.filter((alert) => (Date.parse(alert.createdAt) || 0) > unlockedAt);
+}
+
+function isStudentLocked(student: StudentWorkspace) {
+  return getActiveSafetyAlerts(student).length >= 3;
 }
 
 function parseTime(value?: string) {
@@ -599,30 +625,67 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
 function StudentChatView({ session, student, onChange, onReset }: { session: SessionConfig; student: StudentWorkspace; onChange: (student: StudentWorkspace) => void; onReset: () => void }) {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [unlockCode, setUnlockCode] = useState("");
+  const [unlockError, setUnlockError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestPrompt = student.prompts.at(-1);
   const finalPrompt = student.prompts.find((prompt) => prompt.isFinal);
   const stageIndex = STAGES.findIndex((stage) => stage.stage === student.currentStage);
+  const activeSafetyAlerts = getActiveSafetyAlerts(student);
+  const isLocked = activeSafetyAlerts.length >= 3;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [student.messages.length]);
 
   function addPasteAlert(content: string) {
+    const now = new Date().toISOString();
     const alert: SafetyAlert = {
       id: crypto.randomUUID(),
       alertType: "paste_attempt",
       attemptedContent: content,
       reason: "붙여넣기 시도가 감지되었습니다.",
       isRead: false,
-      createdAt: new Date().toISOString()
+      createdAt: now
     };
-    onChange({ ...student, safetyAlerts: [...student.safetyAlerts, alert], lastActiveAt: new Date().toISOString() });
+    const nextAlerts = [...student.safetyAlerts, alert];
+    const nextMessages = [...student.messages];
+    if (getActiveSafetyAlerts({ ...student, safetyAlerts: nextAlerts }).length >= 3) {
+      nextMessages.push(createAssistantMessage("문제 행동 경고가 3회 누적되어 활동이 잠겼습니다. 담임선생님께 보고하고, 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.", student.currentStage));
+    }
+    onChange({ ...student, messages: nextMessages, safetyAlerts: nextAlerts, lastActiveAt: now });
+  }
+
+  function unlockStudent(event: FormEvent) {
+    event.preventDefault();
+    if (unlockCode.trim() !== getTeacherUnlockCode(session)) {
+      setUnlockError("해제 코드가 맞지 않습니다. 선생님께 다시 확인해 주세요.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    setUnlockCode("");
+    setUnlockError("");
+    onChange({
+      ...student,
+      messages: [
+        ...student.messages,
+        {
+          id: crypto.randomUUID(),
+          role: "system",
+          content: "TEACHER_UNLOCK",
+          stage: student.currentStage,
+          createdAt: now
+        },
+        createAssistantMessage("선생님 확인으로 잠금이 해제되었습니다. 이제 수업 주제에 맞게 다시 이어가 볼게요.", student.currentStage)
+      ],
+      lastActiveAt: now
+    });
   }
 
   async function sendMessage(message = input) {
     const trimmed = message.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed || isSending || isLocked) return;
 
     setIsSending(true);
     setInput("");
@@ -657,10 +720,14 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           createdAt: now
         };
         nextMessages.push(createAssistantMessage(result.message, student.currentStage));
+        const nextAlerts = [...student.safetyAlerts, alert];
+        if (getActiveSafetyAlerts({ ...student, safetyAlerts: nextAlerts }).length >= 3) {
+          nextMessages.push(createAssistantMessage("문제 행동 경고가 3회 누적되어 활동이 잠겼습니다. 담임선생님께 보고하고, 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.", student.currentStage));
+        }
         onChange({
           ...student,
           messages: nextMessages,
-          safetyAlerts: [...student.safetyAlerts, alert],
+          safetyAlerts: nextAlerts,
           lastActiveAt: now
         });
         return;
@@ -676,6 +743,9 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           isRead: false,
           createdAt: now
         });
+        if (getActiveSafetyAlerts({ ...student, safetyAlerts: nextSafetyAlerts }).length >= 3) {
+          nextMessages.push(createAssistantMessage("문제 행동 경고가 3회 누적되어 활동이 잠겼습니다. 담임선생님께 보고하고, 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.", student.currentStage));
+        }
       }
 
       const prompts = [...student.prompts];
@@ -712,6 +782,31 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
 
   return (
     <section className="page-band grid h-[calc(100vh-73px)] min-h-0 gap-4 overflow-hidden py-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {isLocked && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/45 p-4">
+          <form className="w-full max-w-md rounded-[8px] border border-danger/30 bg-white p-5 shadow-soft" onSubmit={unlockStudent}>
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[8px] bg-dangerSoft text-danger">
+                <ShieldCheck size={22} />
+              </span>
+              <div>
+                <h2 className="text-xl font-black text-ink">활동이 잠겼습니다</h2>
+                <p className="mt-2 text-sm font-semibold leading-6 text-muted">
+                  문제 발언 또는 부적절한 답변 경고가 3회 누적되어 담임선생님께 보고되었습니다. 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">
+              누적 경고 {activeSafetyAlerts.length}건
+            </div>
+            <TextField label="교사 해제 코드" value={unlockCode} onChange={setUnlockCode} placeholder="선생님이 입력" type="password" />
+            {unlockError && <p className="mt-3 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{unlockError}</p>}
+            <PrimaryButton type="submit" className="mt-4 w-full justify-center" icon={<ShieldCheck size={18} />}>
+              잠금 해제
+            </PrimaryButton>
+          </form>
+        </div>
+      )}
       <div className="flex min-h-0 flex-col rounded-[8px] border border-line bg-white shadow-soft">
         <div className="shrink-0 border-b border-line p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -761,7 +856,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             }}
             onContextMenu={(event) => event.preventDefault()}
             placeholder={student.currentStage === "revise" ? "수정할 점을 쓰거나, 이걸로 확정할래요 라고 입력해줘." : "네 생각을 직접 적어줘."}
-            disabled={student.currentStage === "final"}
+            disabled={student.currentStage === "final" || isLocked}
           />
           <div className="mt-3 flex flex-wrap justify-between gap-3">
             <div className="flex gap-2">
@@ -776,7 +871,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
                 </>
               )}
             </div>
-            <PrimaryButton type="submit" disabled={isSending || student.currentStage === "final"}>{student.currentStage === "final" ? "완료" : "보내기"}</PrimaryButton>
+            <PrimaryButton type="submit" disabled={isSending || student.currentStage === "final" || isLocked}>{student.currentStage === "final" ? "완료" : "보내기"}</PrimaryButton>
           </div>
         </form>
       </div>
@@ -1212,6 +1307,7 @@ function MonitoringView({
           <dl className="grid gap-3 text-sm md:grid-cols-[1.5fr_0.5fr]">
             <InfoRow label="학생 입장 링크" value={isStudentLinkReady ? studentLink : "AI 질문 초안 승인 후 생성됩니다"} />
             <InfoRow label="접속 코드" value={session.accessCode} />
+            <InfoRow label="교사 해제 코드" value={getTeacherUnlockCode(session)} />
           </dl>
           <div className="mt-4 flex flex-wrap gap-2">
             <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<Copy size={18} />}>
