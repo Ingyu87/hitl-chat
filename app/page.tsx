@@ -151,7 +151,8 @@ export default function AppPage() {
   }
 
   function updateSession(session: SessionConfig) {
-    setData((current) => ({ ...current, session }));
+    setData({ session, students: [] });
+    setUi((current) => ({ ...current, activeStudentId: null }));
   }
 
   function upsertStudent(student: StudentWorkspace) {
@@ -700,10 +701,20 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
         return;
       }
       if (Array.isArray(result.questionFlow) && result.questionFlow.length > 0) {
-        setDraft((current) => ({ ...current, questionFlow: result.questionFlow, lessonDesigned: true }));
-        if (Array.isArray(result.requiredElements)) setRequiredText(result.requiredElements.join(", "));
-        if (Array.isArray(result.constraints)) setConstraintsText(result.constraints.join(", "));
-        setDesignStatus(result.aiUsed ? "Gemini API로 수업설계를 반영했습니다." : "수업설계가 반영되었습니다.");
+        const nextRequired = Array.isArray(result.requiredElements) ? result.requiredElements : splitList(requiredText);
+        const nextConstraints = Array.isArray(result.constraints) ? result.constraints : splitList(constraintsText);
+        const nextSession: SessionConfig = {
+          ...currentDraft(),
+          questionFlow: result.questionFlow,
+          requiredElements: nextRequired,
+          constraints: nextConstraints,
+          lessonDesigned: true
+        };
+        setDraft(nextSession);
+        setRequiredText(nextRequired.join(", "));
+        setConstraintsText(nextConstraints.join(", "));
+        onSave(nextSession);
+        setDesignStatus(result.aiUsed ? "Gemini API로 수업설계를 반영하고 저장했습니다." : "수업설계를 반영하고 저장했습니다.");
       } else {
         setDesignStatus("수업설계 결과를 가져오지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
       }
