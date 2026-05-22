@@ -3,7 +3,7 @@ import { getQuestionForStage, STAGE_ORDER } from "@/lib/question-flow";
 import type { ChatMessage, FlowResult, SessionConfig, Stage } from "@/lib/types";
 
 export function getInitialAssistantMessage(config: SessionConfig): string {
-  return getQuestionForStage(config, "orient");
+  return `안녕하세요! 오늘은 "${config.topic}" 주제로 이미지 프롬프트를 함께 만들어볼게요. 이 주제를 들었을 때 가장 먼저 떠오르는 장면이나 생각은 무엇인가요?`;
 }
 
 export function getNextFlow(args: {
@@ -20,7 +20,7 @@ export function getNextFlow(args: {
     const draftPrompt = buildDraftPrompt(config, history);
     return {
       nextStage: "revise",
-      assistantMessage: `지금까지 말해준 내용을 바탕으로 첫 프롬프트 초안을 만들어봤어요.\n\n${draftPrompt}\n\n읽어보고 더 넣고 싶은 것, 빼고 싶은 것, 바꾸고 싶은 표현이 있으면 편하게 말해줘요. 이대로 확정해도 괜찮아요.`,
+      assistantMessage: `지금까지의 대화를 바탕으로 이미지 생성 프롬프트 초안을 만들었어요.\n\n${draftPrompt}\n\n읽어보고 더 넣고 싶은 것, 빼고 싶은 것, 바꾸고 싶은 표현이 있으면 말해줘요. 이대로 확정해도 괜찮아요.`,
       draftPrompt,
       shouldCreatePrompt: true,
       promptSource: "rule",
@@ -42,7 +42,7 @@ export function getNextFlow(args: {
       const draftPrompt = revisePrompt(latestPrompt, studentInput);
       return {
         nextStage: "revise",
-        assistantMessage: `말해준 수정 의견을 반영해봤어요.\n\n${draftPrompt}\n\n이제 이걸로 확정할까요, 아니면 한 번 더 다듬을까요?`,
+        assistantMessage: `수정 의견을 반영해서 프롬프트를 다시 다듬었어요.\n\n${draftPrompt}\n\n이제 이걸로 확정할까요, 아니면 한 번 더 바꿀까요?`,
         draftPrompt,
         shouldCreatePrompt: true,
         promptSource: "student_revision",

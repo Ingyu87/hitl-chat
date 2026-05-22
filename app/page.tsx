@@ -966,6 +966,29 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
     setDesignStatus("현재 주제를 반영한 기본 질문 흐름을 적용했습니다.");
   }
 
+  function resetLesson() {
+    const now = new Date().toISOString();
+    const nextSession: SessionConfig = {
+      ...DEFAULT_SESSION,
+      id: crypto.randomUUID(),
+      title: "",
+      topic: "",
+      questionFlow: [],
+      lessonDesigned: false,
+      isActive: false,
+      aiEnabled: true,
+      aiCallsPerStudentLimit: 8,
+      accessCode: `HITL${Math.floor(1000 + Math.random() * 9000)}`,
+      revision: (draft.revision ?? 1) + 1,
+      updatedAt: now
+    };
+    setDraft(nextSession);
+    setRequiredText("");
+    setConstraintsText("");
+    onSave(nextSession);
+    setDesignStatus("수업을 초기화했습니다. 새 주제를 입력한 뒤 AI로 수업 설계를 다시 눌러 주세요.");
+  }
+
   function updateTopic(value: string) {
     setDraft((current) => ({
       ...current,
@@ -989,6 +1012,9 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
             <SecondaryButton type="button" onClick={() => void designQuestions("generate")} disabled={isDesigning || !draft.topic.trim()} icon={isDesigning ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}>
               AI로 수업 설계
             </SecondaryButton>
+            <GhostButton type="button" onClick={resetLesson}>
+              수업 초기화
+            </GhostButton>
             <PrimaryButton onClick={save} icon={<Save size={18} />}>
               저장하고 모니터링
             </PrimaryButton>
@@ -1020,7 +1046,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
               <TextArea label="금지/주의 요소" value={constraintsText} onChange={setConstraintsText} placeholder="쉼표로 구분: 주제 이탈 금지, 혐오 표현 금지" />
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-lg font-black text-ink">질문 단계</h2>
+                  <h2 className="text-lg font-black text-ink">챗봇 대화 흐름</h2>
                   <div className="flex flex-wrap gap-2">
                     <SecondaryButton type="button" onClick={addQuestion} icon={<Plus size={16} />}>
                       단계 추가
@@ -1057,7 +1083,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
                         </span>
                       </div>
                       <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-3 font-semibold text-ink" value={item.question} onChange={(event) => updateQuestion(item.stage, event.target.value)} />
-                      <p className="text-xs font-bold leading-5 text-muted">학생에게 보이는 문장: {previewQuestion(item.question, currentDraft())}</p>
+                      <p className="text-xs font-bold leading-5 text-muted">챗봇에게 전달되는 흐름 지시: {previewQuestion(item.question, currentDraft())}</p>
                     </div>
                   ))}
                 </div>

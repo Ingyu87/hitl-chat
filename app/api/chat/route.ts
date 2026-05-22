@@ -144,7 +144,7 @@ function classifyWeakAnswer(input: string, config: SessionConfig): ChatWarning |
     .map((word) => word.trim())
     .filter((word) => word.length >= 2);
   const hasTopicWord = topicWords.some((word) => input.includes(word));
-  const hasVisualClue = /(장면|그림|이미지|색|분위기|사람|학생|교사|선생님|장소|교실|AI|인공지능|안전|활용|문제|해결|모습|행동|느낌)/i.test(input);
+  const hasVisualClue = /(장면|그림|이미지|색|분위기|사람|학생|교사|선생님|장소|교실|AI|인공지능|안전|활용|문제|해결|모습|행동|느낌|화풍|스타일|구도|시점|밝은|어두운|만화|사진|수채화|픽셀)/i.test(input);
 
   if (!hasTopicWord && !hasVisualClue && input.length < 15) {
     return {
