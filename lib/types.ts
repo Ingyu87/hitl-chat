@@ -13,6 +13,7 @@ export type SessionConfig = {
   requiredElements: string[];
   constraints: string[];
   questionFlow: { stage: Stage; label: string; question: string }[];
+  lessonDesigned?: boolean;
   maxLoopCount: number;
   aiEnabled: boolean;
   aiProvider: "gemini";

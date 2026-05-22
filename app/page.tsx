@@ -54,9 +54,6 @@ const initialData: AppData = {
   students: []
 };
 
-const LEGACY_DEFAULT_TOPIC = "기후 위기를 줄이는 미래 도시";
-const LEGACY_DEFAULT_QUESTION_START = `오늘 주제는 "${LEGACY_DEFAULT_TOPIC}"`;
-
 const initialUi: UiState = {
   view: "home",
   isTeacherUnlocked: false,
@@ -265,12 +262,7 @@ export default function AppPage() {
 }
 
 function migrateSavedData(data: AppData): AppData {
-  const questionFlow = data.session.questionFlow ?? [];
-  const looksLikeLegacyDefault =
-    data.session.topic === LEGACY_DEFAULT_TOPIC &&
-    questionFlow.some((item) => item.stage === "orient" && item.question.startsWith(LEGACY_DEFAULT_QUESTION_START));
-
-  if (!looksLikeLegacyDefault) return data;
+  if (data.session.lessonDesigned) return data;
 
   return {
     ...data,
@@ -278,7 +270,8 @@ function migrateSavedData(data: AppData): AppData {
       ...data.session,
       requiredElements: [],
       constraints: [],
-      questionFlow: []
+      questionFlow: [],
+      lessonDesigned: false
     }
   };
 }
@@ -664,7 +657,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
   const [constraintsText, setConstraintsText] = useState(session.constraints.join(", "));
   const [isDesigning, setIsDesigning] = useState(false);
   const [designStatus, setDesignStatus] = useState("");
-  const hasLessonDesign = draft.questionFlow.length > 0;
+  const hasLessonDesign = Boolean(draft.lessonDesigned && draft.questionFlow.length > 0);
 
   function currentDraft() {
     return {
@@ -674,7 +667,8 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       maxLoopCount: DEFAULT_SESSION.maxLoopCount,
       aiEnabled: true,
       requiredElements: splitList(requiredText),
-      constraints: splitList(constraintsText)
+      constraints: splitList(constraintsText),
+      lessonDesigned: Boolean(draft.lessonDesigned && draft.questionFlow.length > 0)
     };
   }
 
@@ -683,7 +677,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       setDesignStatus("수업 주제를 먼저 입력해 주세요.");
       return;
     }
-    if (draft.questionFlow.length === 0) {
+    if (!hasLessonDesign) {
       setDesignStatus("AI로 수업 설계를 눌러 질문 단계를 먼저 만들어 주세요.");
       return;
     }
@@ -706,7 +700,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
         return;
       }
       if (Array.isArray(result.questionFlow) && result.questionFlow.length > 0) {
-        setDraft((current) => ({ ...current, questionFlow: result.questionFlow }));
+        setDraft((current) => ({ ...current, questionFlow: result.questionFlow, lessonDesigned: true }));
         if (Array.isArray(result.requiredElements)) setRequiredText(result.requiredElements.join(", "));
         if (Array.isArray(result.constraints)) setConstraintsText(result.constraints.join(", "));
         setDesignStatus(result.aiUsed ? "Gemini API로 수업설계를 반영했습니다." : "수업설계가 반영되었습니다.");
@@ -739,6 +733,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
     }
     setDraft((current) => ({
       ...current,
+      lessonDesigned: true,
       questionFlow: [...current.questionFlow, { ...missing, question: "학생의 답변을 바탕으로 다음 생각을 물어보는 질문을 입력하세요." }]
     }));
     setDesignStatus(`${missing.label} 단계를 추가했습니다.`);

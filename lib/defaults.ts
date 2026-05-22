@@ -19,6 +19,7 @@ export const DEFAULT_SESSION: SessionConfig = {
   requiredElements: [],
   constraints: [],
   questionFlow: [],
+  lessonDesigned: false,
   maxLoopCount: 3,
   aiEnabled: true,
   aiProvider: "gemini",
