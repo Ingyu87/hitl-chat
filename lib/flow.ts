@@ -20,7 +20,7 @@ export function getNextFlow(args: {
     const draftPrompt = buildDraftPrompt(config, history);
     return {
       nextStage: "revise",
-      assistantMessage: `지금까지의 대화를 바탕으로 이미지 생성 프롬프트 초안을 만들었어요.\n\n${draftPrompt}\n\n읽어보고 더 넣고 싶은 것, 빼고 싶은 것, 바꾸고 싶은 표현이 있으면 말해줘요. 이대로 확정해도 괜찮아요.`,
+      assistantMessage: `지금까지의 대화를 바탕으로 이미지 생성 프롬프트 초안을 만들었어요.\n\n${draftPrompt}\n\n읽어보고 더 넣고 싶은 것, 빼고 싶은 것, 바꾸고 싶은 표현이 있으면 말해 주세요. 이대로 확정해도 괜찮아요.`,
       draftPrompt,
       shouldCreatePrompt: true,
       promptSource: "rule",
@@ -84,5 +84,5 @@ export function getNextFlow(args: {
 }
 
 function isFinalApproval(input: string): boolean {
-  return /(확정|좋아|그대로|완성|최종|ok|OK|yes|응|네|이대로)/.test(input.replace(/\s/g, ""));
+  return /(확정|좋아|그대로|완성|최종|이대로|ok|yes)/i.test(input.replace(/\s/g, ""));
 }

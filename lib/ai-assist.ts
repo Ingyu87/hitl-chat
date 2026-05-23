@@ -1,4 +1,5 @@
 import { callGeminiText } from "@/lib/gemini";
+import { limitPromptLength } from "@/lib/prompt-builder";
 import type { AiAssistResult, AiPurpose, ChatMessage, SessionConfig, Stage } from "@/lib/types";
 
 export async function maybeAssistWithAi(args: {
@@ -33,11 +34,12 @@ export async function maybeAssistWithAi(args: {
     if (args.purpose === "question_polish" && !isCompleteStudentQuestion(trimmed)) {
       return { text: args.baseText, used: false, fallbackReason: "incomplete_question" };
     }
-    if (args.purpose !== "question_polish" && !isDetailedImagePrompt(trimmed)) {
+    const resultText = args.purpose === "question_polish" ? trimmed : limitPromptLength(trimmed);
+    if (args.purpose !== "question_polish" && !isDetailedImagePrompt(resultText)) {
       return { text: args.baseText, used: false, fallbackReason: "insufficient_visual_detail" };
     }
 
-    return { text: trimmed, used: true };
+    return { text: resultText, used: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "provider_error";
     return { text: args.baseText, used: false, fallbackReason: message };
@@ -85,6 +87,8 @@ function buildAssistPrompt(args: {
     "You are a Korean image-prompt writing assistant for a classroom activity.",
     "Create a detailed image-generation prompt from ONLY the student's conversation and the teacher settings.",
     "Return the final prompt text only. No markdown, no explanation.",
+    "The final prompt must be 400 Korean characters or fewer.",
+    "Do not include labels such as topic, student idea, prompt, required elements, or cautions.",
     "Do not invent a new core idea that the student did not provide.",
     "Do expand visual implementation details that are necessary for an image model: scene, main subject, background, action, composition, lighting, mood, style, texture, quality, and exclusions.",
     "The output must be at least 5 complete Korean sentences or sentence-like prompt clauses.",

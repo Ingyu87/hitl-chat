@@ -26,6 +26,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
+import { limitPromptLength } from "@/lib/prompt-builder";
 import { buildDefaultQuestionFlow, getChoicesForStage, getQuestionIndex, getQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
 import { clearStudentRows, deleteStudentRow, getCurrentTeacher, loadStudentsForSession, loadTeacherData, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
@@ -837,7 +838,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         prompts.push({
           id: crypto.randomUUID(),
           version: prompts.length + 1,
-          content: result.draftPrompt,
+          content: limitPromptLength(result.draftPrompt),
           isFinal: false,
           loopCount: prompts.length,
           source: result.promptSource ?? "ai_assisted",
@@ -1631,22 +1632,23 @@ function AnalysisList({ title, items }: { title: string; items: string[] }) {
 
 function PromptCopyBox({ prompt, finalLabel }: { prompt: PromptRecord; finalLabel: boolean }) {
   const [copied, setCopied] = useState(false);
+  const displayPrompt = limitPromptLength(prompt.content);
 
   async function copyPrompt() {
-    await copyText(prompt.content);
+    await copyText(displayPrompt);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
 
   return (
     <button type="button" className="w-full rounded-[8px] bg-surface p-3 text-left transition hover:bg-primarySoft" onClick={() => void copyPrompt()} title="클릭해서 복사">
-      <p className="mb-2 flex items-center justify-between gap-2 text-xs font-black text-muted">
-        <span>{finalLabel ? "최종 승인 완료" : `초안 v${prompt.version}`} � {sourceLabel(prompt.source)}</span>
+      <p className="sr-only">
+        <span>{finalLabel ? "최종 프롬프트" : `프롬프트 v${prompt.version}`}</span>
         <span className="inline-flex items-center gap-1 text-primary">
           <Copy size={14} /> {copied ? "복사됨" : "클릭 복사"}
         </span>
       </p>
-      <p className="whitespace-pre-wrap text-sm font-semibold leading-6 text-ink">{prompt.content}</p>
+      <p className="whitespace-pre-wrap text-sm font-semibold leading-6 text-ink">{displayPrompt}</p>
     </button>
   );
 }
