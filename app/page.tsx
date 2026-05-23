@@ -271,12 +271,13 @@ export default function AppPage() {
 
   async function unlockTeacher(email: string, password: string, mode: "sign-in" | "sign-up") {
     const user = mode === "sign-up" ? await signUpTeacher(email, password) : await signInTeacher(email, password);
+    if (mode === "sign-up" && !user) return "needs-email-confirmation";
     if (!user) return false;
     const nextData = migrateSavedData(await loadTeacherData(user));
     setTeacherUser(user);
     setData(nextData);
     setUi((current) => ({ ...current, isTeacherUnlocked: true, view: current.pendingTeacherView, isTeacherStudentPreview: false }));
-    return true;
+    return "signed-in";
   }
 
   async function logoutTeacher() {
@@ -962,7 +963,9 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   );
 }
 
-function TeacherAuthView({ onUnlock }: { onUnlock: (email: string, password: string, mode: "sign-in" | "sign-up") => Promise<boolean> }) {
+type TeacherAuthResult = "signed-in" | "needs-email-confirmation" | false;
+
+function TeacherAuthView({ onUnlock }: { onUnlock: (email: string, password: string, mode: "sign-in" | "sign-up") => Promise<TeacherAuthResult> }) {
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
@@ -983,9 +986,15 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (email: string, password: str
       return;
     }
     try {
-      const ok = await onUnlock(trimmedEmail, pin, mode);
-      if (!ok) {
-        setError("이메일 또는 비밀번호를 확인해주세요.");
+      const result = await onUnlock(trimmedEmail, pin, mode);
+      if (result === "needs-email-confirmation") {
+        setNotice("회원가입 요청이 완료되었습니다. 이메일 인증 메일을 확인한 뒤 로그인해 주세요.");
+        setMode("sign-in");
+        setPin("");
+        return;
+      }
+      if (!result) {
+        setError(mode === "sign-up" ? "회원가입 정보를 확인해 주세요. 이미 가입한 이메일이면 로그인해 주세요." : "이메일 또는 비밀번호를 확인해주세요.");
         setPin("");
       }
     } catch (error) {
@@ -1005,20 +1014,15 @@ function TeacherAuthView({ onUnlock }: { onUnlock: (email: string, password: str
         <div className="mt-6 grid gap-4">
           <TextField label="교사 이메일" value={email} onChange={setEmail} placeholder="teacher@example.com" />
           <TextField label="비밀번호" value={pin} onChange={setPin} placeholder="비밀번호 입력" type="password" />
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className={`rounded-[8px] border px-3 py-3 text-sm font-black ${mode === "sign-in" ? "border-primary bg-primarySoft text-primary" : "border-line bg-white text-muted"}`} onClick={() => setMode("sign-in")}>
-              로그인
-            </button>
-            <button type="button" className={`rounded-[8px] border px-3 py-3 text-sm font-black ${mode === "sign-up" ? "border-primary bg-primarySoft text-primary" : "border-line bg-white text-muted"}`} onClick={() => setMode("sign-up")}>
-              회원가입
-            </button>
-          </div>
         </div>
         {error && <p className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{error}</p>}
         {notice && <p className="mt-4 rounded-[8px] bg-primarySoft px-3 py-2 text-sm font-bold text-primary">{notice}</p>}
         <PrimaryButton type="submit" className="mt-6 w-full justify-center" icon={<LogIn size={18} />}>
           {mode === "sign-up" ? "회원가입하기" : "로그인하기"}
         </PrimaryButton>
+        <button type="button" className="mt-4 w-full text-center text-sm font-black text-muted hover:text-primary" onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")}>
+          {mode === "sign-in" ? "계정이 없으면 회원가입" : "이미 계정이 있으면 로그인"}
+        </button>
       </form>
     </section>
   );
