@@ -86,14 +86,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gemini lesson design failed";
-    return Response.json(
-      {
-        error: message,
-        aiUsed: false,
-        ...fallback
-      },
-      { status: 500 }
-    );
+    return Response.json({
+      error: message,
+      aiUsed: false,
+      ...fallback
+    });
   }
 }
 
@@ -101,7 +98,7 @@ function buildLessonDesignPrompt(body: LessonDesignBody) {
   const { config, mode } = body;
   const requiredElements = config.requiredElements.filter(Boolean).join(", ") || "none yet";
   const constraints = config.constraints.filter(Boolean).join(", ") || "none yet";
-  const targetQuestionCount = Math.min(MAX_QUESTION_COUNT, Math.max(config.questionFlow.length || 8, STAGE_ORDER.length));
+  const targetQuestionCount = Math.min(10, Math.max(config.questionFlow.length || STAGE_ORDER.length, STAGE_ORDER.length));
   const existingFlow =
     mode === "refine" && config.questionFlow.length > 0
       ? config.questionFlow.map((item, index) => `${index + 1}. ${item.stage}/${item.label}: ${item.question}`).join("\n")
