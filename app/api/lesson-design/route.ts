@@ -1,4 +1,4 @@
-import { callGeminiText } from "@/lib/gemini";
+import { callGeminiJson } from "@/lib/gemini";
 import { buildDefaultQuestionFlow, MAX_QUESTION_COUNT, normalizeChoices, sanitizeQuestionFlow, STAGE_LABELS, STAGE_ORDER } from "@/lib/question-flow";
 import type { LessonQuestion, QuestionChoice, SessionConfig, Stage } from "@/lib/types";
 
@@ -23,14 +23,8 @@ type LessonDesignResult = {
 const lessonDesignSchema = {
   type: "OBJECT",
   properties: {
-    requiredElements: {
-      type: "ARRAY",
-      items: { type: "STRING" }
-    },
-    constraints: {
-      type: "ARRAY",
-      items: { type: "STRING" }
-    },
+    requiredElements: { type: "ARRAY", items: { type: "STRING" } },
+    constraints: { type: "ARRAY", items: { type: "STRING" } },
     questionFlow: {
       type: "ARRAY",
       items: {
@@ -68,24 +62,24 @@ export async function POST(request: Request) {
   };
 
   try {
-    const prompt = buildLessonDesignPrompt(body);
-    const text = await callGeminiText(prompt, {
-      temperature: 0.65,
-      maxOutputTokens: Math.min(8192, Math.max(2400, (body.config.questionFlow.length || 8) * 260)),
-      responseMimeType: "application/json",
+    const parsed = await callGeminiJson<LessonDesignResult | null>(buildLessonDesignPrompt(body), null, {
+      temperature: 0.6,
+      maxOutputTokens: Math.min(4096, Math.max(1800, (body.config.questionFlow.length || STAGE_ORDER.length) * 220)),
       responseSchema: lessonDesignSchema
     });
-    const parsed = parseLessonDesignJson(text);
-    const questionFlow = normalizeQuestionFlow(parsed.questionFlow, body.config);
+
+    if (!parsed || !Array.isArray(parsed.questionFlow) || parsed.questionFlow.length === 0) {
+      throw new Error("lesson_design_invalid_json");
+    }
 
     return Response.json({
-      questionFlow,
+      questionFlow: normalizeQuestionFlow(parsed.questionFlow, body.config),
       requiredElements: normalizeList(parsed.requiredElements, body.config.requiredElements),
       constraints: normalizeList(parsed.constraints, body.config.constraints),
       aiUsed: true
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Gemini lesson design failed";
+    const message = error instanceof Error ? error.message : "lesson_design_failed";
     return Response.json({
       error: message,
       aiUsed: false,
@@ -105,16 +99,15 @@ function buildLessonDesignPrompt(body: LessonDesignBody) {
       : "No previous flow. Create a new flow from the topic and lesson goal.";
 
   return [
-    "You are designing a Korean chatbot conversation guide for students who will create an image-generation prompt.",
+    "You design a Korean chatbot conversation guide for elementary students creating an image-generation prompt.",
     "Return JSON only. No markdown.",
-    `Create up to ${targetQuestionCount} questions. Never return more than ${MAX_QUESTION_COUNT} questionFlow items.`,
-    "Limit by question count, not by token count: each questionFlow array item is one student-facing checkpoint.",
-    "Use short complete Korean sentences. Do not output unfinished questions.",
-    "Do not expose {{topic}} to the teacher or student. Use the actual topic naturally when needed.",
-    "Every question may include choices. Choices help students answer without writing a long essay.",
-    "For art style choices, include easy descriptions such as watercolor, poster, cartoon, realistic photo, pixel art.",
-    "Keep the final three functional checkpoints if useful: draft, revise, final.",
-    "Use stable stage ids. For extra custom questions use question-1, question-2, etc.",
+    `Create ${targetQuestionCount} or fewer questionFlow items. Never exceed ${MAX_QUESTION_COUNT}.`,
+    "Each item must be a short, complete Korean student-facing checkpoint.",
+    "The flow should gather visual details: scene, subject, background, action, composition, mood, style, and exclusions.",
+    "Do not expose {{topic}}. Use the real topic naturally.",
+    "Choices are optional but helpful. Use simple Korean labels and values.",
+    "Keep draft, revise, and final checkpoints when useful.",
+    "Use stable stage ids: orient, explore, concrete, describe, draft, revise, final, or question-1.",
     "",
     `Mode: ${mode}`,
     `Topic: ${config.topic}`,
@@ -123,7 +116,7 @@ function buildLessonDesignPrompt(body: LessonDesignBody) {
     `Teacher required elements: ${requiredElements}`,
     `Teacher caution/constraint elements: ${constraints}`,
     "",
-    "Existing flow for refine mode:",
+    "Existing flow:",
     existingFlow,
     "",
     "Return shape:",
@@ -167,17 +160,4 @@ function cleanQuestion(question: string | undefined, config: SessionConfig) {
   const value = String(question ?? "").replace(/\{\{topic\}\}/g, config.topic).replace(/\s+/g, " ").trim();
   if (!value) return "";
   return value.replaceAll("{{topic}}", config.topic);
-}
-
-function parseLessonDesignJson(text: string): LessonDesignResult {
-  const cleaned = text
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
-  const parsed = JSON.parse(cleaned) as LessonDesignResult;
-  if (!Array.isArray(parsed.questionFlow) || parsed.questionFlow.length === 0) {
-    throw new Error("AI가 질문 흐름 JSON을 반환하지 않았습니다.");
-  }
-  return parsed;
 }

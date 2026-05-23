@@ -1,10 +1,12 @@
-import { callGeminiText, parseJsonObject } from "@/lib/gemini";
-import type { StudentAnalysis, StudentWorkspace, SessionConfig } from "@/lib/types";
+import { callGeminiJson } from "@/lib/gemini";
+import type { SessionConfig, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type AnalyzeBody = {
   session: SessionConfig;
   student: StudentWorkspace;
 };
+
+type AnalysisJson = Omit<StudentAnalysis, "createdAt">;
 
 const analysisSchema = {
   type: "OBJECT",
@@ -27,70 +29,67 @@ export async function POST(request: Request) {
     const latest = body.student.prompts.at(-1);
     const final = body.student.prompts.find((prompt) => prompt.isFinal);
     const prompt = [
-      "너는 교사를 돕는 학습 대화 분석 AI다.",
-      "학생의 대화와 최종 이미지 프롬프트를 보고, 교사가 바로 지도에 활용할 수 있도록 짧고 구체적으로 분석한다.",
-      "반드시 JSON만 출력한다. markdown을 쓰지 않는다.",
+      "You are a Korean learning analytics assistant for teachers.",
+      "Analyze the student's conversation, safety alerts, and latest image-generation prompt.",
+      "Return JSON only. No markdown.",
+      "Every JSON value must be written in Korean.",
+      "Be short, concrete, and useful for teacher feedback.",
       "",
-      `수업 주제: ${body.session.topic}`,
-      `학습 목표: ${body.session.learningGoal}`,
-      `최종 산출물: ${body.session.outputType}`,
-      `필수 포함 요소: ${body.session.requiredElements.join(", ") || "없음"}`,
-      `금지/주의 요소: ${body.session.constraints.join(", ") || "없음"}`,
-      `학생 이름: ${body.student.name}`,
-      `최종/최신 프롬프트: ${final?.content || latest?.content || "아직 프롬프트 없음"}`,
+      `Lesson topic: ${body.session.topic}`,
+      `Learning goal: ${body.session.learningGoal}`,
+      `Output type: ${body.session.outputType}`,
+      `Required elements: ${body.session.requiredElements.join(", ") || "none"}`,
+      `Constraints: ${body.session.constraints.join(", ") || "none"}`,
+      `Student name: ${body.student.name}`,
+      `Final/latest prompt: ${final?.content || latest?.content || "No prompt yet"}`,
       "",
-      "대화 기록:",
-      body.student.messages.map((message) => `${message.role === "user" ? "학생" : "챗봇"}(${message.stage}): ${message.content}`).join("\n"),
+      "Conversation:",
+      body.student.messages.map((message) => `${message.role}(${message.stage}): ${message.content}`).join("\n") || "No conversation",
       "",
-      "경고 기록:",
-      body.student.safetyAlerts.map((alert) => `- ${alert.alertType}: ${alert.attemptedContent} / ${alert.reason || "이유 없음"}`).join("\n") || "- 없음",
+      "Safety alerts:",
+      body.student.safetyAlerts.map((alert) => `- ${alert.alertType}: ${alert.attemptedContent} / ${alert.reason || "no reason"}`).join("\n") || "- none",
       "",
-      "JSON 형식:",
+      "Return shape:",
       '{"summary":"학생 활동 요약","conceptUnderstanding":"개념 이해 수준","strengths":["강점"],"misconceptions":["오해 또는 부족한 점"],"teacherRecommendations":["교사 지도 제안"],"nextQuestions":["다음 질문"]}'
     ].join("\n");
 
-    const text = await callGeminiText(prompt, {
+    const parsed = await callGeminiJson<AnalysisJson | null>(prompt, null, {
       temperature: 0.25,
       maxOutputTokens: 1200,
-      responseMimeType: "application/json",
       responseSchema: analysisSchema
     });
-    const analysis = parseAnalysis(text, fallback);
-    return Response.json({ analysis: normalizeAnalysis(analysis) });
+
+    return Response.json({
+      analysis: normalizeAnalysis(parsed ? { ...parsed, createdAt: new Date().toISOString() } : fallback),
+      aiUsed: Boolean(parsed)
+    });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "analysis_failed";
-    return Response.json({ analysis: fallback, fallbackReason: reason }, { status: 502 });
+    return Response.json({ analysis: fallback, aiUsed: false, fallbackReason: reason });
   }
-}
-
-function parseAnalysis(text: string, fallback: StudentAnalysis): StudentAnalysis {
-  const parsed = parseJsonObject<StudentAnalysis | null>(text, null);
-  if (parsed && typeof parsed === "object" && typeof parsed.summary === "string") {
-    return parsed;
-  }
-
-  const trimmed = text.trim();
-  if (trimmed) {
-    return {
-      ...fallback,
-      summary: trimmed.slice(0, 700),
-      teacherRecommendations: ["Gemini가 구조화 JSON 대신 일반 텍스트 분석을 반환했습니다. 요약 내용을 바탕으로 지도해 주세요."]
-    };
-  }
-
-  return fallback;
 }
 
 function buildFallbackAnalysis(body: AnalyzeBody): StudentAnalysis {
   const final = body.student.prompts.find((prompt) => prompt.isFinal);
   const latest = body.student.prompts.at(-1);
+  const userMessages = body.student.messages.filter((message) => message.role === "user");
+  const hasPrompt = Boolean(final || latest);
+
   return {
-    summary: final || latest ? "분석을 생성하지 못했습니다. 최신 프롬프트와 대화 기록을 직접 확인해 주세요." : "아직 분석할 최종 프롬프트가 없습니다.",
-    conceptUnderstanding: "확인 필요",
-    strengths: [],
-    misconceptions: body.student.safetyAlerts.length > 0 ? ["무성의하거나 주제와 약하게 연결된 답변이 포함되어 있습니다."] : [],
-    teacherRecommendations: ["학생의 대화 기록과 최종 프롬프트를 비교해 부족한 조건을 짚어 주세요."],
-    nextQuestions: ["이 장면에서 꼭 보여주고 싶은 핵심 요소는 무엇인가요?"],
+    summary: hasPrompt
+      ? `${body.student.name} 학생은 '${body.session.topic}' 주제로 이미지 프롬프트를 만들었습니다.`
+      : `${body.student.name} 학생은 아직 최종 프롬프트를 완성하지 않았습니다.`,
+    conceptUnderstanding: hasPrompt ? "학생 답변과 최신 프롬프트를 교사가 직접 확인해 이해 수준을 판단해야 합니다." : "프롬프트 완성 전이라 추가 확인이 필요합니다.",
+    strengths: userMessages.length > 0 ? ["수업 대화에 참여했습니다."] : [],
+    misconceptions: body.student.safetyAlerts.length > 0 ? ["안전 또는 관련성 경고가 있어 교사 확인이 필요합니다."] : [],
+    teacherRecommendations: [
+      "학생 대화 기록과 최신 프롬프트를 비교해 누락된 시각 요소를 짚어 주세요.",
+      "장면, 중심 대상, 배경, 행동, 구도, 분위기가 구체적인지 확인해 주세요."
+    ],
+    nextQuestions: [
+      "이 장면에서 가장 먼저 보여야 하는 대상은 무엇인가요?",
+      "배경에는 어떤 문제 상황이나 해결 행동이 보여야 하나요?"
+    ],
     createdAt: new Date().toISOString()
   };
 }
@@ -103,6 +102,6 @@ function normalizeAnalysis(analysis: StudentAnalysis): StudentAnalysis {
     misconceptions: Array.isArray(analysis.misconceptions) ? analysis.misconceptions : [],
     teacherRecommendations: Array.isArray(analysis.teacherRecommendations) ? analysis.teacherRecommendations : [],
     nextQuestions: Array.isArray(analysis.nextQuestions) ? analysis.nextQuestions : [],
-    createdAt: new Date().toISOString()
+    createdAt: analysis.createdAt || new Date().toISOString()
   };
 }

@@ -1,10 +1,31 @@
-export async function callGeminiText(prompt: string, options?: { temperature?: number; maxOutputTokens?: number; responseMimeType?: string; responseSchema?: unknown }) {
+type GeminiOptions = {
+  temperature?: number;
+  maxOutputTokens?: number;
+  responseMimeType?: string;
+  responseSchema?: unknown;
+};
+
+export class GeminiError extends Error {
+  status?: number;
+  finishReason?: string;
+  details?: string;
+
+  constructor(message: string, metadata?: { status?: number; finishReason?: string; details?: string }) {
+    super(message);
+    this.name = "GeminiError";
+    this.status = metadata?.status;
+    this.finishReason = metadata?.finishReason;
+    this.details = metadata?.details;
+  }
+}
+
+export async function callGeminiText(prompt: string, options?: GeminiOptions) {
   const apiKey =
     process.env.GEMINI_API_KEY ||
     process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
     process.env.GOOGLE_API_KEY;
   if (!apiKey) {
-    throw new Error("Missing Gemini API key. Set GEMINI_API_KEY in Vercel Environment Variables.");
+    throw new GeminiError("missing_api_key");
   }
 
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
@@ -23,25 +44,34 @@ export async function callGeminiText(prompt: string, options?: { temperature?: n
   });
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed: ${response.status}`);
+    const details = await response.text().catch(() => "");
+    throw new GeminiError(`request_failed_${response.status}`, { status: response.status, details: details.slice(0, 500) });
   }
 
   const data = await response.json();
   const candidate = data?.candidates?.[0];
   const finishReason = candidate?.finishReason;
   if (finishReason && !["STOP", "MAX_TOKENS"].includes(finishReason)) {
-    throw new Error(`Gemini stopped unexpectedly: ${finishReason}`);
+    throw new GeminiError(`stopped_${finishReason}`, { finishReason });
   }
   if (finishReason === "MAX_TOKENS") {
-    throw new Error("Gemini response was cut off by the token limit.");
+    throw new GeminiError("max_tokens", { finishReason });
   }
 
   const text = candidate?.content?.parts?.[0]?.text?.trim();
   if (!text) {
-    throw new Error("Gemini returned empty text");
+    throw new GeminiError("empty_text", { finishReason });
   }
 
   return text;
+}
+
+export async function callGeminiJson<T>(prompt: string, fallback: T, options?: Omit<GeminiOptions, "responseMimeType">): Promise<T> {
+  const text = await callGeminiText(prompt, {
+    ...options,
+    responseMimeType: "application/json"
+  });
+  return parseJsonObject(text, fallback);
 }
 
 export function parseJsonObject<T>(text: string, fallback: T): T {

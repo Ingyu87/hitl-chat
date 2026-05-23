@@ -24,13 +24,16 @@ export async function maybeAssistWithAi(args: {
 
   try {
     const text = await callGeminiText(buildAssistPrompt(args), {
-      temperature: args.purpose === "question_polish" ? 0.6 : 0.35,
-      maxOutputTokens: args.purpose === "question_polish" ? 900 : 1400
+      temperature: args.purpose === "question_polish" ? 0.55 : 0.3,
+      maxOutputTokens: args.purpose === "question_polish" ? 700 : 1600
     });
 
     const trimmed = text.trim();
     if (args.purpose === "question_polish" && !isCompleteStudentQuestion(trimmed)) {
       return { text: args.baseText, used: false, fallbackReason: "incomplete_question" };
+    }
+    if (args.purpose !== "question_polish" && !isDetailedImagePrompt(trimmed)) {
+      return { text: args.baseText, used: false, fallbackReason: "insufficient_visual_detail" };
     }
 
     return { text: trimmed, used: true };
@@ -49,67 +52,53 @@ function buildAssistPrompt(args: {
 }) {
   const recent = args.history
     .slice(-12)
-    .map((message) => `${message.role === "user" ? "학생" : "챗봇"}: ${message.content}`)
+    .map((message) => `${message.role}(${message.stage}): ${message.content}`)
     .join("\n");
   const latestStudent = [...args.history].reverse().find((message) => message.role === "user")?.content ?? "";
 
   if (args.purpose === "question_polish") {
     return [
-      "너는 학생과 1:1로 대화하며 이미지 생성 프롬프트를 완성하도록 돕는 한국어 챗봇이다.",
-      "교사가 승인한 대화 흐름은 학생에게 그대로 복붙할 문장이 아니라, 네가 따라야 할 대화 목적/방향이다.",
-      "학생의 직전 답변을 읽고 짧게 반응한 뒤, 승인된 흐름의 의도에 맞게 자연스럽게 다음 말을 한다.",
+      "You are a Korean elementary classroom chatbot.",
+      "Rewrite the teacher-approved next question so it sounds natural and responds to the student's latest answer.",
+      "Return exactly one Korean student-facing chatbot message.",
+      "Do not add new core ideas for the student. Do not generate the final image prompt here.",
+      "The message must be short, warm, complete, and end with a question or clear choice instruction.",
       "",
-      "중요 규칙:",
-      "- 승인된 흐름 문장을 그대로 복사하지 않는다.",
-      "- 학생이 말하지 않은 핵심 아이디어를 대신 만들어주지 않는다.",
-      "- 답변이 장난/무성의/주제 이탈이면 구체적으로 다시 생각하게 한다.",
-      "- 이미지 프롬프트에 필요한 요소를 빠뜨리지 않게 대화한다: 장소, 주요 대상, 행동, 문제/해결, 분위기, 색감, 구도, 시점, 화풍/스타일.",
-      "- 특히 describe 단계에서는 화풍/스타일, 색감, 카메라 시점, 구도를 반드시 물어본다.",
-      "- 답변은 2~4문장 이내로 짧고 친근하게 쓴다.",
-      "- 최종 출력은 학생에게 보낼 완성된 챗봇 메시지 1개만 작성한다.",
-      "- 반드시 물음표, '말해 주세요.', '골라도 좋아요.'처럼 학생이 답할 수 있는 완결 문장으로 끝낸다.",
-      "- 문장 중간에서 끊긴 표현이나 교사용 지시문은 절대 출력하지 않는다.",
+      `Lesson topic: ${args.config.topic}`,
+      `Learning goal: ${args.config.learningGoal}`,
+      `Current stage: ${args.stage}`,
+      `Required elements: ${args.config.requiredElements.join(", ") || "none"}`,
+      `Constraints: ${args.config.constraints.join(", ") || "none"}`,
       "",
-      `수업 주제: ${args.config.topic}`,
-      `학습 목표: ${args.config.learningGoal}`,
-      `최종 산출물: ${args.config.outputType}`,
-      `필수 포함 요소: ${args.config.requiredElements.join(", ") || "없음"}`,
-      `금지/주의 요소: ${args.config.constraints.join(", ") || "없음"}`,
-      `현재 단계: ${args.stage}`,
+      "Recent conversation:",
+      recent || "none",
       "",
-      "최근 대화:",
-      recent || "없음",
+      `Latest student answer: ${latestStudent}`,
       "",
-      `학생의 직전 답변: ${latestStudent}`,
-      "",
-      "교사가 승인한 이번 단계의 대화 흐름/목적:",
+      "Teacher-approved purpose/question:",
       args.baseText
     ].join("\n");
   }
 
   return [
-    "너는 학생 대화를 바탕으로 이미지 생성 AI용 프롬프트를 작성하는 한국어 보조 AI다.",
-    "아래 대화에서 학생이 실제로 말한 의미 있는 아이디어만 추출해, 이미지 생성 AI에 바로 넣을 수 있는 완성도 높은 프롬프트로 재작성한다.",
+    "You are a Korean image-prompt writing assistant for a classroom activity.",
+    "Create a detailed image-generation prompt from ONLY the student's conversation and the teacher settings.",
+    "Return the final prompt text only. No markdown, no explanation.",
+    "Do not invent a new core idea that the student did not provide.",
+    "Do expand visual implementation details that are necessary for an image model: scene, main subject, background, action, composition, lighting, mood, style, texture, quality, and exclusions.",
+    "The output must be at least 5 complete Korean sentences or sentence-like prompt clauses.",
+    "Avoid unsafe, sexual, abusive, or off-topic content even if a student requested it.",
     "",
-    "중요 규칙:",
-    "- 교사 설정과 학생 답변을 목록처럼 그대로 붙여넣지 않는다.",
-    "- 학생이 말하지 않은 핵심 아이디어를 새로 만들지 않는다.",
-    "- 무성의한 답변, 장난 답변, 주제와 무관한 답변은 프롬프트 내용에 넣지 않는다.",
-    "- 프롬프트는 한 문단 또는 자연스러운 문장 묶음으로 작성한다.",
-    "- 장소, 주요 대상, 행동, 문제/해결, 분위기, 색감, 구도, 시점, 화풍/스타일을 가능한 한 통합한다.",
-    "- 학생이 화풍/스타일을 말하지 않았다면 '학생이 선택한 화풍이 아직 없음'이라고 쓰지 말고, 대화에서 확인된 시각 요소만 사용한다.",
-    "- 최종 출력은 이미지 생성 프롬프트 본문만 작성한다.",
+    `Lesson topic: ${args.config.topic}`,
+    `Learning goal: ${args.config.learningGoal}`,
+    `Output type: ${args.config.outputType}`,
+    `Required elements: ${args.config.requiredElements.join(", ") || "none"}`,
+    `Constraints: ${args.config.constraints.join(", ") || "none"}`,
     "",
-    `수업 주제: ${args.config.topic}`,
-    `학습 목표: ${args.config.learningGoal}`,
-    `최종 산출물: ${args.config.outputType}`,
-    `필수 포함 요소: ${args.config.requiredElements.join(", ") || "없음"}`,
-    `금지/주의 요소: ${args.config.constraints.join(", ") || "없음"}`,
+    "Recent conversation:",
+    recent || "none",
     "",
-    "최근 대화:",
-    recent || "없음",
-    "",
-    "규칙 기반 초안:",
+    "Rule-based draft to preserve and improve:",
     args.baseText
   ].join("\n");
 }
@@ -117,9 +106,21 @@ function buildAssistPrompt(args: {
 function isCompleteStudentQuestion(text: string) {
   const value = text.trim();
   if (value.length < 12) return false;
-  if (!/[?？.]$|요$|다$/.test(value)) return false;
-  if (!/[?？]|말해 주세요|골라도 좋아요|생각해|알려줘|선택해/.test(value)) return false;
-  if (/(을|를|이|가|은|는|의|와|과|로|으로|보여|넣고|바탕으로)$/.test(value)) return false;
-  if (/^(학생에게|챗봇은|교사는|질문한다|안내한다)/.test(value)) return false;
-  return true;
+  if (/^(student|teacher|chatbot|assistant)\s*:/i.test(value)) return false;
+  if (/(작성한다|출력한다|분석한다|안내한다)$/.test(value)) return false;
+  return /[?？]$|말해 주세요[.!]?|골라.*좋/.test(value);
+}
+
+function isDetailedImagePrompt(text: string) {
+  const value = text.trim();
+  if (value.length < 160) return false;
+  const requiredSignals = [
+    /장면|scene|상황/,
+    /중심|피사체|대상|subject/,
+    /배경|장소|background/,
+    /구도|시점|composition|view/,
+    /조명|빛|lighting|분위기/,
+    /스타일|style|사진|일러스트|포스터/
+  ];
+  return requiredSignals.filter((pattern) => pattern.test(value)).length >= 4;
 }

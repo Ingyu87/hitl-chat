@@ -437,6 +437,21 @@ function mergeRemoteData(current: AppData, remote: AppData): AppData {
   return { session, students: Array.from(studentsById.values()) };
 }
 
+function buildLocalAnalysisFallback(student: StudentWorkspace): StudentAnalysis {
+  const latest = student.prompts.at(-1);
+  const final = student.prompts.find((prompt) => prompt.isFinal);
+
+  return {
+    summary: final || latest ? "AI 분석을 생성하지 못했습니다. 최신 프롬프트와 대화 기록을 직접 확인해 주세요." : "아직 분석할 최종 프롬프트가 없습니다.",
+    conceptUnderstanding: "확인 필요",
+    strengths: student.messages.some((message) => message.role === "user") ? ["수업 대화에 참여했습니다."] : [],
+    misconceptions: student.safetyAlerts.length > 0 ? ["안전 또는 관련성 경고가 있어 교사 확인이 필요합니다."] : [],
+    teacherRecommendations: ["학생 대화 기록과 최신 프롬프트를 비교해 누락된 시각 요소를 확인해 주세요."],
+    nextQuestions: ["장면에서 가장 먼저 보여야 하는 대상은 무엇인가요?"],
+    createdAt: new Date().toISOString()
+  };
+}
+
 function TopBar({
   view,
   setView,
@@ -671,6 +686,23 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   const activeSafetyAlerts = getActiveSafetyAlerts(student);
   const isLocked = activeSafetyAlerts.length >= 3;
   const currentChoices = getChoicesForStage(session, student.currentStage);
+  const aiUsedCount = student.aiLogs.filter((log) => log.used).length;
+  const aiLimit = Math.max(0, session.aiCallsPerStudentLimit ?? 0);
+  const aiRemaining = Math.max(0, aiLimit - aiUsedCount);
+  const aiCounterText = !session.aiEnabled
+    ? "AI 보조 꺼짐"
+    : aiRemaining <= 0
+      ? "AI 보조 한도 도달 · 기본 질문으로 진행"
+      : aiRemaining <= 5
+        ? `AI 보조 ${aiUsedCount}/${aiLimit}회 · 남은 ${aiRemaining}회`
+        : `AI 보조 ${aiUsedCount}/${aiLimit}회`;
+  const aiCounterClassName = !session.aiEnabled
+    ? "bg-surface text-muted"
+    : aiRemaining <= 0
+      ? "bg-dangerSoft text-danger"
+      : aiRemaining <= 5
+        ? "bg-amber-100 text-amber-800"
+        : "bg-primarySoft text-primary";
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -948,6 +980,9 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         </form>
       </div>
       <aside className="flex min-h-0 flex-col gap-4 overflow-hidden">
+        <InfoPanel title="AI 보조 사용량" icon={<Sparkles size={20} />}>
+          <p className={`rounded-[8px] px-3 py-2 text-sm font-black ${aiCounterClassName}`}>{aiCounterText}</p>
+        </InfoPanel>
         <InfoPanel title="현재 결과물" icon={<Check size={20} />}>
           {latestPrompt ? (
             <PromptCopyBox prompt={finalPrompt ?? latestPrompt} finalLabel={Boolean(finalPrompt)} />
@@ -1042,6 +1077,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       title: draft.topic,
       requiredElements: splitList(requiredText),
       constraints: splitList(constraintsText),
+      aiCallsPerStudentLimit: Math.min(30, Math.max(0, draft.aiCallsPerStudentLimit)),
       lessonDesigned: Boolean(draft.lessonDesigned && draft.questionFlow.length > 0)
     };
   }
@@ -1082,7 +1118,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
           requiredElements: nextRequired,
           constraints: nextConstraints,
           aiEnabled: true,
-          aiCallsPerStudentLimit: Math.max(currentDraft().aiCallsPerStudentLimit, 8),
+          aiCallsPerStudentLimit: currentDraft().aiCallsPerStudentLimit,
           lessonDesigned: true,
           isActive: false
         };
@@ -1165,7 +1201,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       lessonDesigned: false,
       isActive: false,
       aiEnabled: true,
-      aiCallsPerStudentLimit: 8,
+      aiCallsPerStudentLimit: 30,
       accessCode: `HITL${Math.floor(1000 + Math.random() * 9000)}`,
       revision: (draft.revision ?? 1) + 1,
       updatedAt: now
@@ -1218,7 +1254,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <NumberField label="최대 수정 횟수" value={draft.maxLoopCount} min={1} max={8} onChange={(value) => setDraft({ ...draft, maxLoopCount: value })} />
-            <NumberField label="학생당 AI 호출 한도" value={draft.aiCallsPerStudentLimit} min={0} max={20} onChange={(value) => setDraft({ ...draft, aiCallsPerStudentLimit: value })} />
+            <NumberField label="학생당 AI 보조 한도" value={draft.aiCallsPerStudentLimit} min={0} max={30} onChange={(value) => setDraft({ ...draft, aiCallsPerStudentLimit: value })} />
             <label className="flex items-center gap-3 rounded-[8px] border border-line bg-surface px-3 py-3 text-sm font-black text-muted">
               <input type="checkbox" checked={draft.aiEnabled} onChange={(event) => setDraft({ ...draft, aiEnabled: event.target.checked })} />
               AI 문장 보조 사용
@@ -1353,7 +1389,13 @@ function MonitoringView({
         body: JSON.stringify({ session, student })
       });
       const result = await response.json();
-      onUpdateStudent({ ...student, analysis: result.analysis as StudentAnalysis });
+      if (result.analysis) {
+        onUpdateStudent({ ...student, analysis: result.analysis as StudentAnalysis });
+      } else {
+        onUpdateStudent({ ...student, analysis: buildLocalAnalysisFallback(student) });
+      }
+    } catch {
+      onUpdateStudent({ ...student, analysis: buildLocalAnalysisFallback(student) });
     } finally {
       setIsAnalyzing(false);
     }
@@ -1544,6 +1586,23 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
                 </div>
               )}
             </InfoPanel>
+            <InfoPanel title="AI 상태" icon={<Sparkles size={20} />}>
+              {student.aiLogs.length > 0 ? (
+                <div className="space-y-2 text-xs font-semibold leading-5 text-muted">
+                  {student.aiLogs.slice(-6).map((log) => (
+                    <div key={log.id} className="rounded-[8px] bg-surface p-2">
+                      <p className="font-black text-ink">
+                        {log.purpose} · {log.used ? "AI 사용" : "기본 규칙 사용"}
+                      </p>
+                      {log.fallbackReason && <p>사유: {log.fallbackReason}</p>}
+                      <p>{formatTime(log.createdAt)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-semibold text-muted">아직 AI 로그가 없습니다.</p>
+              )}
+            </InfoPanel>
           </aside>
         </div>
       </section>
@@ -1685,10 +1744,22 @@ function TextArea({ label, value, onChange, placeholder }: { label: string; valu
 }
 
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
+  const normalizedValue = Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+
   return (
     <label className="grid gap-2">
       <span className="text-sm font-black text-muted">{label}</span>
-      <input type="number" min={min} max={max} className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input
+        type="number"
+        min={min}
+        max={max}
+        className="focus-ring rounded-[8px] border border-line bg-surface px-3 py-3 font-semibold text-ink"
+        value={normalizedValue}
+        onChange={(event) => {
+          const nextValue = Number(event.target.value);
+          onChange(Math.min(max, Math.max(min, Number.isFinite(nextValue) ? nextValue : min)));
+        }}
+      />
     </label>
   );
 }

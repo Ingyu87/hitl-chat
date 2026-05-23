@@ -2,7 +2,7 @@ import { maybeAssistWithAi } from "@/lib/ai-assist";
 import { getNextFlow } from "@/lib/flow";
 import { getQuestionForStage } from "@/lib/question-flow";
 import { checkSafety } from "@/lib/safety";
-import { callGeminiText, parseJsonObject } from "@/lib/gemini";
+import { callGeminiJson } from "@/lib/gemini";
 import type { AiAssistLog, ChatMessage, PromptSource, SafetyAlert, SessionConfig, Stage } from "@/lib/types";
 
 type ChatBody = {
@@ -52,25 +52,28 @@ export async function POST(request: Request) {
 
   const problem = await classifyProblemAnswer(body);
   if (problem) {
-    const response = {
+    if (problem.isSafetyAlert) {
+      return Response.json({
+        blocked: true,
+        alertType: problem.alertType,
+        reason: problem.reason,
+        message: problem.studentMessage,
+        stage: body.currentStage,
+        shouldCreatePrompt: false,
+        isFinal: false,
+        aiLog: createAiLog("safety_check", body.currentStage, false, problem.alertType)
+      });
+    }
+
+    return Response.json({
       blocked: false,
-      clarification: !problem.isSafetyAlert,
+      clarification: true,
       userMessage,
       assistantMessage: createAssistantMessage(problem.studentMessage, body.currentStage),
       stage: body.currentStage,
       shouldCreatePrompt: false,
       isFinal: false,
       aiLog: createAiLog("safety_check", body.currentStage, false, problem.alertType)
-    };
-
-    if (!problem.isSafetyAlert) return Response.json(response);
-
-    return Response.json({
-      ...response,
-      warning: {
-        alertType: problem.alertType,
-        reason: problem.reason
-      }
     });
   }
 
@@ -139,36 +142,30 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
     const currentFlow = getQuestionForStage(body.config, body.currentStage);
     const recent = body.history
       .slice(-6)
-      .map((message) => `${message.role === "user" ? "학생" : "챗봇"}: ${message.content}`)
+      .map((message) => `${message.role}(${message.stage}): ${message.content}`)
       .join("\n");
     const prompt = [
-      "너는 수업용 챗봇의 학생 답변을 분류하는 한국어 안전/관련성 판정기다.",
-      "환경 문제 묘사, 오염, 쓰레기, 냄새, 위험한 장면 묘사는 수업 주제 장면일 수 있으므로 욕설/모욕으로 판단하지 않는다.",
-      "짧거나 모호한 답변은 안전 경고가 아니라 재질문 대상으로 분류한다.",
-      "반드시 JSON만 출력한다.",
+      "You classify a Korean student's classroom answer for safety and relevance.",
+      "Return JSON only. No markdown.",
+      "Categories: safe, profanity, sexual, abusive, meaningless, off_topic.",
+      "Environmental words such as trash, pollution, danger, dead fish, or dirty ocean are safe when used for the lesson topic.",
+      "Classify sexual/nudity requests as sexual even if phrased as an image idea.",
+      "Classify random strings, empty answers, or unserious answers as meaningless.",
       "",
-      "범주:",
-      "- safe: 수업 주제와 어느 정도 관련 있고 다음 대화로 진행 가능",
-      "- profanity: 욕설, 비속어, 저속한 표현",
-      "- sexual: 음란하거나 성적인 표현",
-      "- abusive: 사람을 향한 폭언, 모욕, 위협, 괴롭힘",
-      "- meaningless: 무의미한 단어, 너무 짧거나 모호한 답변",
-      "- off_topic: 질문/수업 주제와 관련 없는 동문서답",
+      `Lesson topic: ${body.config.topic}`,
+      `Current question: ${currentFlow}`,
+      "Recent conversation:",
+      recent || "none",
+      `Student answer: ${body.message}`,
       "",
-      `수업 주제: ${body.config.topic}`,
-      `현재 질문: ${currentFlow}`,
-      "최근 대화:",
-      recent || "없음",
-      `학생 답변: ${body.message}`
+      'Return shape: {"category":"safe","reason":"short Korean reason","studentMessage":"Korean message to show the student"}'
     ].join("\n");
 
-    const text = await callGeminiText(prompt, {
+    const result = await callGeminiJson<AiModeration | null>(prompt, null, {
       temperature: 0,
       maxOutputTokens: 360,
-      responseMimeType: "application/json",
       responseSchema: moderationSchema
     });
-    const result = parseJsonObject<AiModeration | null>(text, null);
     if (!result || result.category === "safe") return null;
 
     return {
@@ -208,10 +205,10 @@ function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage):
   const normalized = input.trim().replace(/\s/g, "").toLowerCase();
   if (isValidVisualScene(input, config)) return null;
 
-  if (/^(몰라|모름|없음|아무거나|아무생각없어|아무생각이없어|생각없어|대충|글쎄|잘모르겠어|잘모름|\?+|!+)$/.test(normalized)) {
+  if (isClearlyMeaningless(normalized)) {
     return {
       alertType: "meaningless",
-      reason: "학생 답변이 아직 프롬프트 재료로 쓰기에는 모호합니다.",
+      reason: "학생 답변이 프롬프트 재료로 사용하기에 너무 모호합니다.",
       studentMessage: defaultStudentMessage("meaningless", config, stage),
       isSafetyAlert: false
     };
@@ -220,13 +217,39 @@ function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage):
   if (normalized.length < 5) {
     return {
       alertType: "meaningless",
-      reason: "학생 답변이 짧아 재질문이 필요합니다.",
+      reason: "학생 답변이 짧아 자세한 문장이 필요합니다.",
       studentMessage: defaultStudentMessage("meaningless", config, stage),
       isSafetyAlert: false
     };
   }
 
   return null;
+}
+
+function isClearlyMeaningless(normalized: string) {
+  if (!normalized) return false;
+  const meaninglessTerms = [
+    "\ubab0\ub77c",
+    "\ubaa8\ub984",
+    "\uc5c6\uc74c",
+    "\uc544\ubb34\uac70\ub098",
+    "\uc544\ubb34\uc0dd\uac01\uc5c6\uc5b4",
+    "\uc0dd\uac01\uc5c6\uc5b4",
+    "\ub300\ucda9",
+    "\uae00\uc384",
+    "\uc798\ubaa8\ub974\uaca0\uc5b4",
+    "\uc798\ubaa8\ub984",
+    "\ub108\uac00\ud574",
+    "\ub2c8\uac00\ud574",
+    "asdf",
+    "qwer",
+    "test"
+  ];
+  if (meaninglessTerms.some((term) => normalized.includes(term))) return true;
+  if (/^[ㅋㅎㅠㅜ]+$/.test(normalized)) return true;
+  if (/^[?.!,~\-_=+]+$/.test(normalized)) return true;
+  if (/^(.)\1{4,}$/.test(normalized)) return true;
+  return false;
 }
 
 function isValidVisualScene(input: string, config: SessionConfig) {
@@ -237,24 +260,24 @@ function isValidVisualScene(input: string, config: SessionConfig) {
     .map((word) => word.trim())
     .filter((word) => word.length >= 2);
   const hasTopicWord = topicWords.some((word) => text.includes(word));
-  const hasSceneWord = /바다|숲|강|하늘|교실|마을|도시|사람|학생|동물|물고기|돌고래|장면|모습|그림|이미지|색|빛|분위기|쓰레기|오염|냄새|위험|플라스틱|폐수|죽은|깨끗|미래|해결|줍는|보여/.test(text);
-  const hasActionOrDescriptor = /떠다니|뛰어|줍|보여|있는|없는|냄새|밝|어둡|더럽|깨끗|위험|멋진|슬픈|희망|오염/.test(text);
+  const hasSceneWord = /바다|강|하늘|교실|마을|도시|사람|학생|동물|물고기|상황|모습|그림|이미지|빛|분위기|쓰레기|오염|위험|플라스틱|자연|죽은|미래|해결|보여/.test(text);
+  const hasActionOrDescriptor = /있|없|보여|움직|밝|어둡|더럽|깨끗|위험|멋진|슬픈|희망|해결/.test(text);
   return hasSceneWord && (hasActionOrDescriptor || hasTopicWord || text.length >= 12);
 }
 
 function defaultReason(category: AiModeration["category"]) {
   if (category === "profanity") return "욕설 또는 비속어가 포함되어 있습니다.";
   if (category === "sexual") return "성적인 표현이 포함되어 있습니다.";
-  if (category === "abusive") return "위협, 모욕, 혐오 표현이 포함되어 있습니다.";
+  if (category === "abusive") return "폭언, 모욕, 혐오 표현이 포함되어 있습니다.";
   if (category === "meaningless") return "답변이 아직 구체적이지 않습니다.";
   if (category === "off_topic") return "질문 또는 수업 주제와 관련이 약한 답변입니다.";
   return "수업 진행에 맞게 다시 확인이 필요한 답변입니다.";
 }
 
 function defaultStudentMessage(category: Exclude<AiModeration["category"], "safe">, config: SessionConfig, stage: Stage) {
-  if (category === "profanity") return "욕설이나 비속어는 수업 대화에 사용할 수 없어요. 표현을 바꾸어 다시 말해 주세요.";
-  if (category === "sexual") return "성적인 내용은 이 활동에서 사용할 수 없어요. 수업 주제에 맞는 장면으로 다시 말해 주세요.";
-  if (category === "abusive") return "위협, 모욕, 혐오 표현은 사용할 수 없어요. 상대를 존중하는 표현으로 다시 말해 주세요.";
+  if (category === "profanity") return "욕설이나 비속어는 수업 대화에 사용할 수 없어요. 표현을 바꿔서 다시 말해 주세요.";
+  if (category === "sexual") return "성적인 내용은 이 수업 활동에서 사용할 수 없어요. 수업 주제에 맞는 장면으로 다시 말해 주세요.";
+  if (category === "abusive") return "폭언, 모욕, 혐오 표현은 사용할 수 없어요. 상대를 존중하는 표현으로 다시 말해 주세요.";
 
-  return `질문이 애매했을 수 있어요. 아래 선택지를 골라도 좋고, 떠오르는 장면을 한 문장으로 말해도 좋아요.\n\n${getQuestionForStage(config, stage)}`;
+  return `질문에 어울리는 답이 필요해요. 원하는 장면을 한 문장으로 다시 말해 주세요.\n\n${getQuestionForStage(config, stage)}`;
 }
