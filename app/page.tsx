@@ -42,7 +42,7 @@ type UiState = {
   view: View;
   isTeacherUnlocked: boolean;
   isTeacherStudentPreview: boolean;
-  pendingTeacherView: TeacherView;
+  pendingTeacherView: "home" | TeacherView;
   activeStudentId: string | null;
 };
 
@@ -57,10 +57,10 @@ const initialData: AppData = {
 };
 
 const initialUi: UiState = {
-  view: "home",
+  view: "teacher-auth",
   isTeacherUnlocked: false,
   isTeacherStudentPreview: false,
-  pendingTeacherView: "teacher-settings",
+  pendingTeacherView: "home",
   activeStudentId: null
 };
 
@@ -96,7 +96,7 @@ export default function AppPage() {
       if (user) {
         setTeacherUser(user);
         nextData = await loadTeacherData(user);
-        nextUi = { ...nextUi, isTeacherUnlocked: true };
+        nextUi = { ...nextUi, isTeacherUnlocked: true, view: nextUi.view === "teacher-auth" ? "home" : nextUi.view };
       }
 
       nextData = migrateSavedData(nextData);
@@ -111,7 +111,15 @@ export default function AppPage() {
       } else if (nextUi.view === "student-login" || nextUi.view === "student-chat" || nextUi.view === "teacher-auth") {
         nextUi = {
           ...nextUi,
-          view: nextUi.isTeacherUnlocked ? "teacher-settings" : "home",
+          view: nextUi.isTeacherUnlocked ? "home" : "teacher-auth",
+          isTeacherStudentPreview: false,
+          activeStudentId: null
+        };
+      } else if (!nextUi.isTeacherUnlocked) {
+        nextUi = {
+          ...nextUi,
+          view: "teacher-auth",
+          pendingTeacherView: "home",
           isTeacherStudentPreview: false,
           activeStudentId: null
         };
@@ -159,6 +167,11 @@ export default function AppPage() {
   }, [ui, isLoaded]);
 
   function setView(view: View) {
+    if (!teacherUser && view !== "student-login" && view !== "student-chat" && view !== "teacher-auth") {
+      setUi((current) => ({ ...current, view: "teacher-auth", isTeacherStudentPreview: false, activeStudentId: null }));
+      return;
+    }
+
     setUi((current) => ({ ...current, view, isTeacherStudentPreview: view === "student-login" || view === "student-chat" ? current.isTeacherStudentPreview : false }));
   }
 
@@ -269,7 +282,7 @@ export default function AppPage() {
   async function logoutTeacher() {
     await signOutTeacher();
     setTeacherUser(null);
-    setUi((current) => ({ ...current, isTeacherUnlocked: false, view: "home", activeStudentId: null, isTeacherStudentPreview: false }));
+    setUi((current) => ({ ...current, isTeacherUnlocked: false, pendingTeacherView: "home", view: "teacher-auth", activeStudentId: null, isTeacherStudentPreview: false }));
   }
 
   function openStudentPreview() {
@@ -289,7 +302,16 @@ export default function AppPage() {
   return (
     <main className="app-shell">
       <TopBar view={ui.view} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} isTeacherStudentPreview={ui.isTeacherStudentPreview} teacherUser={teacherUser} onLogout={() => void logoutTeacher()} />
-      {ui.view === "home" && <HomeView session={data.session} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} resetDemo={resetDemo} />}
+      {ui.view === "home" && (
+        <HomeView
+          session={data.session}
+          setView={setView}
+          openTeacherView={openTeacherView}
+          openStudentPreview={openStudentPreview}
+          resetDemo={resetDemo}
+          isTeacherAuthenticated={Boolean(teacherUser)}
+        />
+      )}
       {ui.view === "student-login" && (
         <StudentLoginView
           session={data.session}
@@ -432,12 +454,12 @@ function TopBar({
   onLogout: () => void;
 }) {
   const isStudentView = view === "student-login" || view === "student-chat";
-  const shouldHideTeacherNav = isStudentView && !isTeacherStudentPreview;
+  const shouldHideTeacherNav = (isStudentView && !isTeacherStudentPreview) || (view === "teacher-auth" && !teacherUser);
 
   return (
     <header className="sticky top-0 z-30 border-b border-line/80 bg-white/86 backdrop-blur">
       <div className="page-band flex min-h-16 items-center justify-between gap-4 py-3">
-        <button type="button" className="flex items-center gap-3 text-left" onClick={() => setView(shouldHideTeacherNav ? "student-login" : "home")} title="처음 화면">
+        <button type="button" className="flex items-center gap-3 text-left" onClick={() => setView(isStudentView && !isTeacherStudentPreview ? "student-login" : teacherUser ? "home" : "teacher-auth")} title="처음 화면">
           <span className="grid h-11 w-11 place-items-center rounded-[8px] bg-primary text-white">
             <Bot size={24} />
           </span>
@@ -475,13 +497,15 @@ function HomeView({
   setView,
   openTeacherView,
   openStudentPreview,
-  resetDemo
+  resetDemo,
+  isTeacherAuthenticated
 }: {
   session: SessionConfig;
   setView: (view: View) => void;
   openTeacherView: (view: TeacherView) => void;
   openStudentPreview: () => void;
   resetDemo: () => void;
+  isTeacherAuthenticated: boolean;
 }) {
   const studentLink = buildStudentLink(session.accessCode);
   const isStudentLinkReady = Boolean(session.lessonDesigned && session.isActive && session.questionFlow.length > 0);
@@ -507,19 +531,28 @@ function HomeView({
         </div>
       </div>
       <div className="grid gap-4">
-        <InfoPanel title="학생 안내 정보" icon={<ClipboardList size={20} />}>
-          <dl className="grid gap-3 text-sm">
-            <InfoRow label="학생 입장 링크" value={isStudentLinkReady ? studentLink : "질문 흐름 승인 후 생성됩니다"} />
-            <InfoRow label="학생 접속 코드" value={session.accessCode} />
-            <InfoRow label="수업 주제" value={session.topic} />
-            <InfoRow label="AI 역할" value="질문 진행, 안전 판단, 프롬프트 생성, 교사용 분석" />
-          </dl>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<KeyRound size={18} />}>
-              학생 링크 복사
-            </SecondaryButton>
-          </div>
-        </InfoPanel>
+        {isTeacherAuthenticated ? (
+          <InfoPanel title="학생 안내 정보" icon={<ClipboardList size={20} />}>
+            <dl className="grid gap-3 text-sm">
+              <InfoRow label="학생 입장 링크" value={isStudentLinkReady ? studentLink : "질문 흐름 승인 후 생성됩니다"} />
+              <InfoRow label="학생 접속 코드" value={session.accessCode} />
+              <InfoRow label="수업 주제" value={session.topic} />
+              <InfoRow label="AI 역할" value="질문 진행, 안전 판단, 프롬프트 생성, 교사용 분석" />
+            </dl>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<KeyRound size={18} />}>
+                학생 링크 복사
+              </SecondaryButton>
+            </div>
+          </InfoPanel>
+        ) : (
+          <InfoPanel title="교사 로그인 필요" icon={<ShieldCheck size={20} />}>
+            <p className="text-sm font-semibold leading-6 text-muted">학생 입장 링크와 접속 코드는 교사 로그인 후 확인할 수 있습니다.</p>
+            <PrimaryButton className="mt-4" onClick={() => openTeacherView("teacher-settings")} icon={<LogIn size={18} />}>
+              교사 로그인
+            </PrimaryButton>
+          </InfoPanel>
+        )}
       </div>
     </section>
   );
