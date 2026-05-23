@@ -20,6 +20,20 @@ export class GeminiError extends Error {
   }
 }
 
+function isThinkingGeminiModel(model: string) {
+  return /gemini-2\.5|gemini-3/i.test(model);
+}
+
+function extractCandidateText(candidate: { content?: { parts?: Array<{ text?: string; thought?: boolean }> } }) {
+  const parts = candidate?.content?.parts ?? [];
+  const visible = parts
+    .filter((part) => part.text && !part.thought)
+    .map((part) => part.text?.trim() ?? "")
+    .filter(Boolean);
+  if (visible.length > 0) return visible.join("\n").trim();
+  return parts[0]?.text?.trim() ?? "";
+}
+
 export async function callGeminiText(prompt: string, options?: GeminiOptions) {
   const apiKey =
     process.env.GEMINI_API_KEY ||
@@ -29,18 +43,23 @@ export async function callGeminiText(prompt: string, options?: GeminiOptions) {
     throw new GeminiError("missing_api_key");
   }
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+  const generationConfig: Record<string, unknown> = {
+    temperature: options?.temperature ?? 0.4,
+    maxOutputTokens: options?.maxOutputTokens ?? 900,
+    responseMimeType: options?.responseMimeType,
+    responseSchema: options?.responseSchema
+  };
+  if (isThinkingGeminiModel(model)) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: options?.temperature ?? 0.4,
-        maxOutputTokens: options?.maxOutputTokens ?? 900,
-        responseMimeType: options?.responseMimeType,
-        responseSchema: options?.responseSchema
-      }
+      generationConfig
     })
   });
 
@@ -52,7 +71,7 @@ export async function callGeminiText(prompt: string, options?: GeminiOptions) {
   const data = await response.json();
   const candidate = data?.candidates?.[0];
   const finishReason = candidate?.finishReason;
-  const text = candidate?.content?.parts?.[0]?.text?.trim();
+  const text = extractCandidateText(candidate);
   if (finishReason && !["STOP", "MAX_TOKENS"].includes(finishReason)) {
     throw new GeminiError(`stopped_${finishReason}`, { finishReason });
   }

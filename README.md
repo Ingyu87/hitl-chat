@@ -32,6 +32,8 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 `GEMINI_API_KEY`가 없으면 AI 보조가 켜져 있어도 규칙 기반 결과로 fallback합니다.
 
+기본 모델은 `gemini-2.0-flash`입니다. `GEMINI_MODEL=gemini-2.5-flash`처럼 2.5 이상을 쓰면 thinking 토큰을 줄이기 위해 `thinkingBudget: 0`을 자동 적용합니다.
+
 ## 배포 메모
 
 - `.env.local`은 GitHub에 올리지 않습니다.

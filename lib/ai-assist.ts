@@ -26,7 +26,7 @@ export async function maybeAssistWithAi(args: {
   try {
     const text = await callGeminiText(buildAssistPrompt(args), {
       temperature: args.purpose === "question_polish" ? 0.55 : 0.3,
-      maxOutputTokens: args.purpose === "question_polish" ? 700 : 1600,
+      maxOutputTokens: args.purpose === "question_polish" ? 1024 : 2048,
       allowPartial: true
     });
 
@@ -34,6 +34,7 @@ export async function maybeAssistWithAi(args: {
     if (args.purpose === "question_polish" && !isCompleteStudentQuestion(trimmed)) {
       return { text: args.baseText, used: false, fallbackReason: "incomplete_question" };
     }
+
     const resultText = args.purpose === "question_polish" ? trimmed : limitPromptLength(trimmed);
     if (args.purpose !== "question_polish" && !isDetailedImagePrompt(resultText)) {
       return { text: args.baseText, used: false, fallbackReason: "insufficient_visual_detail" };
