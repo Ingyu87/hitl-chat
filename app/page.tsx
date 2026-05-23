@@ -48,6 +48,7 @@ type UiState = {
 
 const DATA_STORAGE_KEY = "hitl-chat-state-v2";
 const UI_STORAGE_KEY = "hitl-chat-ui-v2";
+const AI_ASSIST_LIMIT = 30;
 const APP_NAME = "생각잇기 프롬프트";
 const APP_SUBTITLE = "학생 답변 기반 이미지 생성 프롬프트 수업 도구";
 
@@ -352,7 +353,8 @@ function migrateSavedData(data: AppData): AppData {
     constraints: data.session.constraints ?? [],
     questionFlow: data.session.questionFlow ?? [],
     revision: data.session.revision ?? 1,
-    updatedAt: data.session.updatedAt ?? new Date(0).toISOString()
+    updatedAt: data.session.updatedAt ?? new Date(0).toISOString(),
+    aiCallsPerStudentLimit: AI_ASSIST_LIMIT
   };
   const hasMatchingQuestionFlow = questionFlowMatchesTopic(session);
 
@@ -1077,7 +1079,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       title: draft.topic,
       requiredElements: splitList(requiredText),
       constraints: splitList(constraintsText),
-      aiCallsPerStudentLimit: Math.min(30, Math.max(0, draft.aiCallsPerStudentLimit)),
+      aiCallsPerStudentLimit: AI_ASSIST_LIMIT,
       lessonDesigned: Boolean(draft.lessonDesigned && draft.questionFlow.length > 0)
     };
   }
@@ -1118,7 +1120,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
           requiredElements: nextRequired,
           constraints: nextConstraints,
           aiEnabled: true,
-          aiCallsPerStudentLimit: currentDraft().aiCallsPerStudentLimit,
+          aiCallsPerStudentLimit: AI_ASSIST_LIMIT,
           lessonDesigned: true,
           isActive: false
         };
@@ -1201,7 +1203,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
       lessonDesigned: false,
       isActive: false,
       aiEnabled: true,
-      aiCallsPerStudentLimit: 30,
+      aiCallsPerStudentLimit: AI_ASSIST_LIMIT,
       accessCode: `HITL${Math.floor(1000 + Math.random() * 9000)}`,
       revision: (draft.revision ?? 1) + 1,
       updatedAt: now
@@ -1254,7 +1256,10 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <NumberField label="최대 수정 횟수" value={draft.maxLoopCount} min={1} max={8} onChange={(value) => setDraft({ ...draft, maxLoopCount: value })} />
-            <NumberField label="학생당 AI 보조 한도" value={draft.aiCallsPerStudentLimit} min={0} max={30} onChange={(value) => setDraft({ ...draft, aiCallsPerStudentLimit: value })} />
+            <div className="grid gap-2 rounded-[8px] border border-line bg-surface px-3 py-3">
+              <span className="text-sm font-black text-muted">학생당 AI 보조 한도</span>
+              <span className="text-lg font-black text-ink">{AI_ASSIST_LIMIT}회 고정</span>
+            </div>
             <label className="flex items-center gap-3 rounded-[8px] border border-line bg-surface px-3 py-3 text-sm font-black text-muted">
               <input type="checkbox" checked={draft.aiEnabled} onChange={(event) => setDraft({ ...draft, aiEnabled: event.target.checked })} />
               AI 문장 보조 사용

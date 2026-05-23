@@ -4,6 +4,7 @@ import type { SessionConfig, StudentWorkspace } from "@/lib/types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const AI_ASSIST_LIMIT = 30;
 
 export const supabaseBrowser =
   supabaseUrl && supabaseAnonKey
@@ -161,7 +162,7 @@ function rowToSession(row: SessionRow): SessionConfig {
     aiEnabled: row.ai_enabled,
     aiProvider: "gemini",
     aiUsagePolicy: "questions_and_prompts",
-    aiCallsPerStudentLimit: row.ai_calls_per_student_limit,
+    aiCallsPerStudentLimit: AI_ASSIST_LIMIT,
     maxLoopCount: row.max_loop_count,
     lessonDesigned: row.lesson_designed,
     isActive: row.is_active,
@@ -183,7 +184,7 @@ function sessionToRow(session: SessionConfig, teacherId: string) {
     constraints: session.constraints ?? [],
     question_flow: session.questionFlow ?? [],
     ai_enabled: session.aiEnabled,
-    ai_calls_per_student_limit: session.aiCallsPerStudentLimit,
+    ai_calls_per_student_limit: AI_ASSIST_LIMIT,
     max_loop_count: session.maxLoopCount,
     lesson_designed: Boolean(session.lessonDesigned),
     is_active: session.isActive,

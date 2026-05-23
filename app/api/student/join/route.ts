@@ -2,6 +2,8 @@ import { getInitialAssistantMessage } from "@/lib/flow";
 import { requireSupabaseAdmin } from "@/lib/supabase-admin";
 import type { SessionConfig, StudentWorkspace } from "@/lib/types";
 
+const AI_ASSIST_LIMIT = 30;
+
 type JoinBody = {
   code: string;
   name: string;
@@ -100,7 +102,7 @@ function rowToSession(row: any): SessionConfig {
     aiEnabled: row.ai_enabled,
     aiProvider: "gemini",
     aiUsagePolicy: "questions_and_prompts",
-    aiCallsPerStudentLimit: row.ai_calls_per_student_limit,
+    aiCallsPerStudentLimit: AI_ASSIST_LIMIT,
     accessCode: row.access_code,
     isActive: row.is_active,
     revision: row.revision,
