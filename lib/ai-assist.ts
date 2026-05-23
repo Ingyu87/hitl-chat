@@ -25,7 +25,8 @@ export async function maybeAssistWithAi(args: {
   try {
     const text = await callGeminiText(buildAssistPrompt(args), {
       temperature: args.purpose === "question_polish" ? 0.55 : 0.3,
-      maxOutputTokens: args.purpose === "question_polish" ? 700 : 1600
+      maxOutputTokens: args.purpose === "question_polish" ? 700 : 1600,
+      allowPartial: true
     });
 
     const trimmed = text.trim();
@@ -108,7 +109,7 @@ function isCompleteStudentQuestion(text: string) {
   if (value.length < 12) return false;
   if (/^(student|teacher|chatbot|assistant)\s*:/i.test(value)) return false;
   if (/(작성한다|출력한다|분석한다|안내한다)$/.test(value)) return false;
-  return /[?？]$|말해 주세요[.!]?|골라.*좋/.test(value);
+  return /[?？!！]$|말해\s*주세요[.!！]?|골라.*[주좋]|해\s*볼까요|어때요|이야기해|알려\s*주세요|생각해\s*주세요|선택해\s*주세요/.test(value);
 }
 
 function isDetailedImagePrompt(text: string) {
@@ -120,7 +121,7 @@ function isDetailedImagePrompt(text: string) {
     /배경|장소|background/,
     /구도|시점|composition|view/,
     /조명|빛|lighting|분위기/,
-    /스타일|style|사진|일러스트|포스터/
+    /스타일|style|사진|일러스트|텍스처/
   ];
   return requiredSignals.filter((pattern) => pattern.test(value)).length >= 4;
 }

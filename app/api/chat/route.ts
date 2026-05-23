@@ -150,7 +150,9 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
       "Categories: safe, profanity, sexual, abusive, meaningless, off_topic.",
       "Environmental words such as trash, pollution, danger, dead fish, or dirty ocean are safe when used for the lesson topic.",
       "Classify sexual/nudity requests as sexual even if phrased as an image idea.",
-      "Classify random strings, empty answers, or unserious answers as meaningless.",
+      "off_topic: The answer is coherent but clearly unrelated to the lesson topic or current question.",
+      "meaningless: The answer is random text, empty, repeated characters, or a non-answer regardless of topic.",
+      "Every reason and studentMessage value must be written in Korean.",
       "",
       `Lesson topic: ${body.config.topic}`,
       `Current question: ${currentFlow}`,
@@ -158,7 +160,7 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
       recent || "none",
       `Student answer: ${body.message}`,
       "",
-      'Return shape: {"category":"safe","reason":"short Korean reason","studentMessage":"Korean message to show the student"}'
+      'Return shape: {"category":"safe","reason":"짧은 한국어 이유","studentMessage":"학생에게 보여줄 한국어 메시지"}'
     ].join("\n");
 
     const result = await callGeminiJson<AiModeration | null>(prompt, null, {
@@ -246,7 +248,7 @@ function isClearlyMeaningless(normalized: string) {
     "test"
   ];
   if (meaninglessTerms.some((term) => normalized.includes(term))) return true;
-  if (/^[ㅋㅎㅠㅜ]+$/.test(normalized)) return true;
+  if (/^[ㅋㅎㅠㅜㅗㅓㅏㅣㅡ]+$/.test(normalized)) return true;
   if (/^[?.!,~\-_=+]+$/.test(normalized)) return true;
   if (/^(.)\1{4,}$/.test(normalized)) return true;
   return false;
@@ -261,7 +263,7 @@ function isValidVisualScene(input: string, config: SessionConfig) {
     .filter((word) => word.length >= 2);
   const hasTopicWord = topicWords.some((word) => text.includes(word));
   const hasSceneWord = /바다|강|하늘|교실|마을|도시|사람|학생|동물|물고기|상황|모습|그림|이미지|빛|분위기|쓰레기|오염|위험|플라스틱|자연|죽은|미래|해결|보여/.test(text);
-  const hasActionOrDescriptor = /있|없|보여|움직|밝|어둡|더럽|깨끗|위험|멋진|슬픈|희망|해결/.test(text);
+  const hasActionOrDescriptor = /하고|보여|움직|밝|어둡|더럽|깨끗|위험|멋진|슬픈|희망|해결/.test(text);
   return hasSceneWord && (hasActionOrDescriptor || hasTopicWord || text.length >= 12);
 }
 
@@ -278,6 +280,9 @@ function defaultStudentMessage(category: Exclude<AiModeration["category"], "safe
   if (category === "profanity") return "욕설이나 비속어는 수업 대화에 사용할 수 없어요. 표현을 바꿔서 다시 말해 주세요.";
   if (category === "sexual") return "성적인 내용은 이 수업 활동에서 사용할 수 없어요. 수업 주제에 맞는 장면으로 다시 말해 주세요.";
   if (category === "abusive") return "폭언, 모욕, 혐오 표현은 사용할 수 없어요. 상대를 존중하는 표현으로 다시 말해 주세요.";
+  if (category === "off_topic") {
+    return `지금 답변은 수업 주제와 조금 멀어 보여요. "${config.topic}"와 연결되는 장면이나 생각으로 다시 말해 주세요.\n\n${getQuestionForStage(config, stage)}`;
+  }
 
-  return `질문에 어울리는 답이 필요해요. 원하는 장면을 한 문장으로 다시 말해 주세요.\n\n${getQuestionForStage(config, stage)}`;
+  return `질문에 어울리는 답이 필요해요. 원하는 장면이나 생각을 한 문장으로 다시 말해 주세요.\n\n${getQuestionForStage(config, stage)}`;
 }

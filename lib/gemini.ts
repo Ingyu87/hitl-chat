@@ -3,6 +3,7 @@ type GeminiOptions = {
   maxOutputTokens?: number;
   responseMimeType?: string;
   responseSchema?: unknown;
+  allowPartial?: boolean;
 };
 
 export class GeminiError extends Error {
@@ -51,14 +52,15 @@ export async function callGeminiText(prompt: string, options?: GeminiOptions) {
   const data = await response.json();
   const candidate = data?.candidates?.[0];
   const finishReason = candidate?.finishReason;
+  const text = candidate?.content?.parts?.[0]?.text?.trim();
   if (finishReason && !["STOP", "MAX_TOKENS"].includes(finishReason)) {
     throw new GeminiError(`stopped_${finishReason}`, { finishReason });
   }
   if (finishReason === "MAX_TOKENS") {
+    if (options?.allowPartial && text) return text;
     throw new GeminiError("max_tokens", { finishReason });
   }
 
-  const text = candidate?.content?.parts?.[0]?.text?.trim();
   if (!text) {
     throw new GeminiError("empty_text", { finishReason });
   }
