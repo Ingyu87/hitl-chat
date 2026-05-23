@@ -1,8 +1,8 @@
 import { maybeAssistWithAi } from "@/lib/ai-assist";
+import { callAiJson, getAiProvider, hasAiApiKey } from "@/lib/ai-provider";
 import { getNextFlow } from "@/lib/flow";
 import { getQuestionForStage } from "@/lib/question-flow";
 import { checkSafety } from "@/lib/safety";
-import { callGeminiJson } from "@/lib/gemini";
 import type { AiAssistLog, ChatMessage, PromptSource, SafetyAlert, SessionConfig, Stage } from "@/lib/types";
 
 type ChatBody = {
@@ -136,7 +136,7 @@ async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null
 }
 
 async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
-  if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY && !process.env.GOOGLE_API_KEY) return null;
+  if (!hasAiApiKey()) return null;
 
   try {
     const currentFlow = getQuestionForStage(body.config, body.currentStage);
@@ -163,7 +163,7 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
       'Return shape: {"category":"safe","reason":"짧은 한국어 이유","studentMessage":"학생에게 보여줄 한국어 메시지"}'
     ].join("\n");
 
-    const result = await callGeminiJson<AiModeration | null>(prompt, null, {
+    const result = await callAiJson<AiModeration | null>(prompt, null, {
       temperature: 0,
       maxOutputTokens: 360,
       responseSchema: moderationSchema
@@ -194,7 +194,7 @@ function createAssistantMessage(content: string, stage: Stage): ChatMessage {
 function createAiLog(purpose: AiAssistLog["purpose"], stage: Stage, used: boolean, fallbackReason?: string): AiAssistLog {
   return {
     id: crypto.randomUUID(),
-    provider: "gemini",
+    provider: getAiProvider(),
     purpose,
     stage,
     used,

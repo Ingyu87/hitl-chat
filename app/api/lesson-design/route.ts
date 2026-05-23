@@ -1,4 +1,4 @@
-import { callGeminiJson } from "@/lib/gemini";
+import { callAiJson } from "@/lib/ai-provider";
 import { buildDefaultQuestionFlow, MAX_QUESTION_COUNT, normalizeChoices, sanitizeQuestionFlow, STAGE_LABELS, STAGE_ORDER } from "@/lib/question-flow";
 import type { LessonQuestion, QuestionChoice, SessionConfig, Stage } from "@/lib/types";
 
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   };
 
   try {
-    const parsed = await callGeminiJson<LessonDesignResult | null>(buildLessonDesignPrompt(body), null, {
+    const parsed = await callAiJson<LessonDesignResult | null>(buildLessonDesignPrompt(body), null, {
       temperature: 0.6,
       maxOutputTokens: Math.min(4096, Math.max(1800, (body.config.questionFlow.length || STAGE_ORDER.length) * 220)),
       responseSchema: lessonDesignSchema

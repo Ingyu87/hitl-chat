@@ -1,5 +1,7 @@
 export type Stage = string;
 
+export type AiProvider = "gemini" | "upstage";
+
 export type AiPurpose = "question_polish" | "draft_prompt" | "revise_prompt" | "safety_check" | "teacher_analysis";
 
 export type PromptSource = "rule" | "ai_assisted" | "student_revision";
@@ -16,7 +18,7 @@ export type SessionConfig = {
   lessonDesigned?: boolean;
   maxLoopCount: number;
   aiEnabled: boolean;
-  aiProvider: "gemini";
+  aiProvider: AiProvider;
   aiUsagePolicy: "questions_and_prompts";
   aiCallsPerStudentLimit: number;
   accessCode: string;
@@ -77,7 +79,7 @@ export type StudentAnalysis = {
 
 export type AiAssistLog = {
   id: string;
-  provider: "gemini";
+  provider: AiProvider;
   purpose: AiPurpose;
   stage: Stage;
   used: boolean;

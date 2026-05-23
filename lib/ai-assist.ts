@@ -1,4 +1,4 @@
-import { callGeminiText } from "@/lib/gemini";
+import { callAiText, hasAiApiKey } from "@/lib/ai-provider";
 import { limitPromptLength } from "@/lib/prompt-builder";
 import type { AiAssistResult, AiPurpose, ChatMessage, SessionConfig, Stage } from "@/lib/types";
 
@@ -12,9 +12,7 @@ export async function maybeAssistWithAi(args: {
 }): Promise<AiAssistResult> {
   if (!args.purpose) return { text: args.baseText, used: false, fallbackReason: "no_ai_purpose" };
   if (!args.config.aiEnabled) return { text: args.baseText, used: false, fallbackReason: "ai_disabled" };
-  if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY && !process.env.GOOGLE_API_KEY) {
-    return { text: args.baseText, used: false, fallbackReason: "missing_api_key" };
-  }
+  if (!hasAiApiKey()) return { text: args.baseText, used: false, fallbackReason: "missing_api_key" };
 
   const remainingCalls = args.config.aiCallsPerStudentLimit - args.aiCallCount;
   if (remainingCalls <= 0) return { text: args.baseText, used: false, fallbackReason: "limit_exceeded" };
@@ -24,7 +22,7 @@ export async function maybeAssistWithAi(args: {
   }
 
   try {
-    const text = await callGeminiText(buildAssistPrompt(args), {
+    const text = await callAiText(buildAssistPrompt(args), {
       temperature: args.purpose === "question_polish" ? 0.55 : 0.3,
       maxOutputTokens: args.purpose === "question_polish" ? 1024 : 2048,
       allowPartial: true

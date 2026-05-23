@@ -1,4 +1,4 @@
-import { callGeminiJson } from "@/lib/gemini";
+import { callAiJson } from "@/lib/ai-provider";
 import type { SessionConfig, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type AnalyzeBody = {
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
       '{"summary":"학생 활동 요약","conceptUnderstanding":"개념 이해 수준","strengths":["강점"],"misconceptions":["오해 또는 부족한 점"],"teacherRecommendations":["교사 지도 제안"],"nextQuestions":["다음 질문"]}'
     ].join("\n");
 
-    const parsed = await callGeminiJson<AnalysisJson | null>(prompt, null, {
+    const parsed = await callAiJson<AnalysisJson | null>(prompt, null, {
       temperature: 0.25,
       maxOutputTokens: 1200,
       responseSchema: analysisSchema
