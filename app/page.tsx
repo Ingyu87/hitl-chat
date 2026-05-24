@@ -751,6 +751,7 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
 function StudentChatView({ session, student, onChange, onReset }: { session: SessionConfig; student: StudentWorkspace; onChange: (student: StudentWorkspace) => void; onReset: () => void }) {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState("");
   const [unlockCode, setUnlockCode] = useState("");
   const [unlockError, setUnlockError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -834,6 +835,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
     if (!trimmed || isSending || isLocked) return;
 
     setIsSending(true);
+    setSendError("");
     setInput("");
 
     try {
@@ -850,6 +852,11 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           aiCallCount: student.aiLogs.filter((log) => log.used).length
         })
       });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.error ?? "채팅 응답을 받지 못했습니다.");
+      }
 
       const result = await response.json();
       const now = new Date().toISOString();
@@ -933,6 +940,9 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         aiLogs: result.aiLog ? [...student.aiLogs, result.aiLog as AiAssistLog] : student.aiLogs,
         lastActiveAt: now
       });
+    } catch (error) {
+      setInput(trimmed);
+      setSendError(error instanceof Error ? error.message : "메시지를 보내지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
     } finally {
       setIsSending(false);
     }
@@ -1015,6 +1025,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
               ))}
             </div>
           )}
+          {sendError && <p className="mb-3 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{sendError}</p>}
           <textarea
             className="focus-ring h-20 w-full resize-none rounded-[8px] border border-line bg-surface p-3 font-semibold leading-7 text-ink"
             value={input}
@@ -1632,7 +1643,7 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
                 {activeMessages.map((message) => (
                   <div key={message.id} className={`rounded-[8px] p-3 ${message.role === "user" ? "bg-primarySoft" : "bg-surface"}`}>
                     <p className="text-xs font-black text-muted">
-                      {message.role === "user" ? "학생" : "챗봇"} � {stageLabel(message.stage)} � {formatTime(message.createdAt)}
+                      {message.role === "user" ? "학생" : "챗봇"} · {stageLabel(message.stage)} · {formatTime(message.createdAt)}
                     </p>
                     <p className="mt-1 whitespace-pre-wrap text-sm font-semibold leading-6 text-ink">{message.content}</p>
                   </div>
@@ -1674,7 +1685,7 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
                 <div className="space-y-2">
                   {student.safetyAlerts.map((alert) => (
                     <div key={alert.id} className="rounded-[8px] bg-dangerSoft p-3 text-sm font-semibold leading-6 text-danger">
-                      <p className="font-black">{alertLabel(alert.alertType)} � {formatTime(alert.createdAt)}</p>
+                      <p className="font-black">{alertLabel(alert.alertType)} · {formatTime(alert.createdAt)}</p>
                       <p>입력: {alert.attemptedContent}</p>
                       {alert.reason && <p>판단 사유: {alert.reason}</p>}
                     </div>
@@ -1694,7 +1705,7 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
                 AI 분석하기
               </PrimaryButton>
               {student.analysis && (
-                <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-ink">
+                <div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto pr-1 text-sm font-semibold leading-6 text-ink">
                   <p className="rounded-[8px] bg-surface p-3">{student.analysis.summary}</p>
                   <AnalysisList title="개념 인식" items={[student.analysis.conceptUnderstanding]} />
                   <AnalysisList title="강점" items={student.analysis.strengths} />

@@ -1,23 +1,32 @@
+-- HITL Prompt Builder current production schema.
+-- The app stores each student's chat state as JSONB columns on students.
+-- The older normalized messages/prompts tables are intentionally not used by the current code.
+
+create extension if not exists pgcrypto;
+
 create table if not exists sessions (
   id uuid primary key default gen_random_uuid(),
-  teacher_id uuid references auth.users(id),
-  title text not null default '프롬프트 빌더 수업',
-  topic text not null,
-  learning_goal text not null,
+  teacher_id uuid references auth.users(id) on delete set null,
+  title text not null default 'HITL 수업',
+  topic text not null default '',
+  learning_goal text not null default '',
   output_type text not null default '이미지 생성 프롬프트',
   required_elements text[] not null default array[]::text[],
   constraints text[] not null default array[]::text[],
   question_flow jsonb not null default '[]'::jsonb,
   max_loop_count int not null default 3,
-  ai_enabled boolean not null default false,
+  ai_enabled boolean not null default true,
   ai_provider text not null default 'gemini',
   ai_usage_policy text not null default 'questions_and_prompts',
-  ai_calls_per_student_limit int not null default 8,
+  ai_calls_per_student_limit int not null default 30,
   access_code text not null,
+  lesson_designed boolean not null default false,
   is_active boolean not null default false,
+  revision int not null default 1,
   start_time timestamptz,
   end_time timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists students (
@@ -26,74 +35,55 @@ create table if not exists students (
   name text not null,
   access_code text not null,
   current_stage text not null default 'orient',
-  last_active_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists messages (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid references sessions(id) on delete cascade,
-  student_id uuid references students(id) on delete cascade,
-  role text not null check (role in ('assistant', 'user', 'system')),
-  content text not null,
-  stage text not null,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists prompts (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid references sessions(id) on delete cascade,
-  student_id uuid references students(id) on delete cascade,
-  version int not null default 1,
-  content text not null,
-  is_final boolean not null default false,
-  loop_count int not null default 0,
-  source text not null check (source in ('rule', 'ai_assisted', 'student_revision')),
-  created_at timestamptz not null default now()
-);
-
-create table if not exists safety_alerts (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid references sessions(id) on delete cascade,
-  student_id uuid references students(id) on delete cascade,
-  alert_type text not null check (alert_type in ('paste_attempt', 'profanity', 'off_topic', 'meaningless')),
-  attempted_content text,
-  is_read boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists ai_assist_logs (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid references sessions(id) on delete cascade,
-  student_id uuid references students(id) on delete cascade,
-  provider text not null default 'gemini',
-  purpose text not null check (purpose in ('question_polish', 'draft_prompt', 'revise_prompt')),
-  stage text not null,
-  used boolean not null default false,
-  fallback_reason text,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists app_state (
-  id text primary key default 'main',
-  state jsonb not null,
+  joined_revision int not null default 1,
+  messages jsonb not null default '[]'::jsonb,
+  prompts jsonb not null default '[]'::jsonb,
+  safety_alerts jsonb not null default '[]'::jsonb,
+  ai_logs jsonb not null default '[]'::jsonb,
+  analysis jsonb,
+  last_active_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-alter table app_state enable row level security;
+alter table sessions add column if not exists lesson_designed boolean not null default false;
+alter table sessions add column if not exists revision int not null default 1;
+alter table sessions add column if not exists updated_at timestamptz not null default now();
+alter table sessions alter column ai_calls_per_student_limit set default 30;
+alter table sessions alter column ai_enabled set default true;
 
-drop policy if exists "Allow public app state read" on app_state;
-drop policy if exists "Allow public app state write" on app_state;
+alter table students add column if not exists joined_revision int not null default 1;
+alter table students add column if not exists messages jsonb not null default '[]'::jsonb;
+alter table students add column if not exists prompts jsonb not null default '[]'::jsonb;
+alter table students add column if not exists safety_alerts jsonb not null default '[]'::jsonb;
+alter table students add column if not exists ai_logs jsonb not null default '[]'::jsonb;
+alter table students add column if not exists analysis jsonb;
+alter table students add column if not exists updated_at timestamptz not null default now();
 
-create policy "Allow public app state read"
-  on app_state
-  for select
-  to anon, authenticated
-  using (true);
+create index if not exists sessions_teacher_updated_idx on sessions(teacher_id, updated_at desc);
+create index if not exists sessions_access_code_idx on sessions(access_code);
+create index if not exists students_session_last_active_idx on students(session_id, last_active_at desc);
+create index if not exists students_session_code_name_idx on students(session_id, access_code, name);
 
-create policy "Allow public app state write"
-  on app_state
-  for all
-  to anon, authenticated
-  using (true)
-  with check (true);
+create or replace function set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists sessions_set_updated_at on sessions;
+create trigger sessions_set_updated_at
+before update on sessions
+for each row execute function set_updated_at();
+
+drop trigger if exists students_set_updated_at on students;
+create trigger students_set_updated_at
+before update on students
+for each row execute function set_updated_at();
+
+-- MVP policy:
+-- The app currently uses Supabase Auth on the client for teacher reads/writes
+-- and service-role route handlers for student join/save. Full RLS hardening is
+-- intentionally deferred until after classroom pilot stabilization.
