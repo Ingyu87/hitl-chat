@@ -99,7 +99,7 @@ export async function loadTeacherData(user: User) {
   if (sessionError) throw sessionError;
 
   const session = sessionRows?.[0] ? rowToSession(sessionRows[0] as SessionRow) : createEmptySession();
-  const students = sessionRows?.[0] ? await loadStudentsForSession(session.id) : [];
+  const students = sessionRows?.[0] ? await loadStudentsForTeacher(user.id) : [];
 
   return { session, students };
 }
@@ -113,6 +113,27 @@ export async function loadStudentsForSession(sessionId: string) {
     .order("last_active_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((row) => rowToStudent(row as StudentRow));
+}
+
+export async function loadStudentsForTeacher(teacherId: string) {
+  if (!supabaseBrowser) return [];
+  const { data: sessionRows, error: sessionError } = await supabaseBrowser
+    .from("sessions")
+    .select("id, topic")
+    .eq("teacher_id", teacherId);
+  if (sessionError) throw sessionError;
+
+  const topicBySessionId = new Map((sessionRows ?? []).map((row) => [row.id as string, row.topic as string]));
+  const sessionIds = Array.from(topicBySessionId.keys());
+  if (!sessionIds.length) return [];
+
+  const { data, error } = await supabaseBrowser
+    .from("students")
+    .select("*")
+    .in("session_id", sessionIds)
+    .order("last_active_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => rowToStudent(row as StudentRow, topicBySessionId.get((row as StudentRow).session_id)));
 }
 
 export async function saveTeacherSession(session: SessionConfig, user: User) {
@@ -136,6 +157,21 @@ export async function deleteStudentRow(studentId: string) {
 export async function clearStudentRows(sessionId: string) {
   if (!supabaseBrowser) return;
   const { error } = await supabaseBrowser.from("students").delete().eq("session_id", sessionId);
+  if (error) throw error;
+}
+
+export async function clearStudentRowsForTeacher(teacherId: string) {
+  if (!supabaseBrowser) return;
+  const { data: sessionRows, error: sessionError } = await supabaseBrowser
+    .from("sessions")
+    .select("id")
+    .eq("teacher_id", teacherId);
+  if (sessionError) throw sessionError;
+
+  const sessionIds = (sessionRows ?? []).map((row) => row.id as string);
+  if (!sessionIds.length) return;
+
+  const { error } = await supabaseBrowser.from("students").delete().in("session_id", sessionIds);
   if (error) throw error;
 }
 
@@ -192,10 +228,11 @@ function sessionToRow(session: SessionConfig, teacherId: string) {
   };
 }
 
-function rowToStudent(row: StudentRow): StudentWorkspace {
+function rowToStudent(row: StudentRow, lessonTopic?: string): StudentWorkspace {
   return {
     id: row.id,
     sessionId: row.session_id,
+    lessonTopic,
     name: row.name,
     accessCode: row.access_code,
     joinedRevision: row.joined_revision,

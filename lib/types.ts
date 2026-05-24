@@ -90,6 +90,7 @@ export type AiAssistLog = {
 export type StudentWorkspace = {
   id: string;
   sessionId?: string;
+  lessonTopic?: string;
   name: string;
   accessCode: string;
   joinedRevision?: number;

@@ -28,7 +28,7 @@ import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { limitPromptLength } from "@/lib/prompt-builder";
 import { buildDefaultQuestionFlow, getChoicesForStage, getQuestionIndex, getQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
-import { clearStudentRows, deleteStudentRow, getCurrentTeacher, loadStudentsForSession, loadTeacherData, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
+import { clearStudentRows, clearStudentRowsForTeacher, deleteStudentRow, getCurrentTeacher, loadStudentsForTeacher, loadTeacherData, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
@@ -50,6 +50,7 @@ type UiState = {
 const DATA_STORAGE_KEY = "hitl-chat-state-v2";
 const UI_STORAGE_KEY = "hitl-chat-ui-v2";
 const AI_ASSIST_LIMIT = 30;
+const RESTART_MARKER_PREFIX = "__HITL_RESTART__:";
 const APP_NAME = "생각잇기 프롬프트";
 const APP_SUBTITLE = "학생 답변 기반 이미지 생성 프롬프트 수업 도구";
 
@@ -156,12 +157,12 @@ export default function AppPage() {
     if (!isLoaded || !teacherUser) return;
 
     const pollTimer = window.setInterval(async () => {
-      const students = await loadStudentsForSession(data.session.id);
+      const students = await loadStudentsForTeacher(teacherUser.id);
       setData((current) => ({ ...current, students }));
     }, 3000);
 
     return () => window.clearInterval(pollTimer);
-  }, [data.session.id, isLoaded, teacherUser]);
+  }, [isLoaded, teacherUser]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -231,10 +232,12 @@ export default function AppPage() {
               currentStage: "orient",
               joinedRevision: current.session.revision ?? 1,
               lastActiveAt: now,
-              messages: [createAssistantMessage(getInitialAssistantMessage(current.session), "orient")],
+              messages: [
+                ...student.messages,
+                createRestartMarkerMessage(student, current.session, now),
+                createAssistantMessage(getInitialAssistantMessage(current.session), "orient")
+              ],
               prompts: [],
-              safetyAlerts: [],
-              aiLogs: [],
               analysis: undefined
             })
           : student
@@ -252,7 +255,11 @@ export default function AppPage() {
   }
 
   function clearStudents() {
-    void clearStudentRows(data.session.id);
+    if (teacherUser) {
+      void clearStudentRowsForTeacher(teacherUser.id);
+    } else {
+      void clearStudentRows(data.session.id);
+    }
     setData((current) => ({ ...current, students: [] }));
     setUi((current) => ({ ...current, activeStudentId: null }));
   }
@@ -407,6 +414,70 @@ function getLastTeacherUnlockTime(student: StudentWorkspace) {
       .filter((message) => message.role === "system" && message.content === "TEACHER_UNLOCK")
       .map((message) => Date.parse(message.createdAt) || 0)
   );
+}
+
+type RestartRecord = {
+  id: string;
+  topic: string;
+  createdAt: string;
+  stage: Stage;
+  messages: ChatMessage[];
+  prompts: PromptRecord[];
+};
+
+function createRestartMarkerMessage(student: StudentWorkspace, session: SessionConfig, createdAt: string): ChatMessage {
+  const snapshot: RestartRecord = {
+    id: crypto.randomUUID(),
+    topic: session.topic,
+    createdAt,
+    stage: student.currentStage,
+    messages: getActiveMessages(student.messages),
+    prompts: student.prompts
+  };
+
+  return {
+    id: crypto.randomUUID(),
+    role: "system",
+    content: `${RESTART_MARKER_PREFIX}${JSON.stringify(snapshot)}`,
+    stage: student.currentStage,
+    createdAt
+  };
+}
+
+function isRestartMarker(message: ChatMessage) {
+  return message.role === "system" && message.content.startsWith(RESTART_MARKER_PREFIX);
+}
+
+function getRestartRecords(student: StudentWorkspace): RestartRecord[] {
+  return student.messages
+    .filter(isRestartMarker)
+    .map((message) => {
+      try {
+        const parsed = JSON.parse(message.content.slice(RESTART_MARKER_PREFIX.length)) as Partial<RestartRecord>;
+        return {
+          id: parsed.id ?? message.id,
+          topic: parsed.topic ?? "",
+          createdAt: parsed.createdAt ?? message.createdAt,
+          stage: parsed.stage ?? message.stage,
+          messages: parsed.messages ?? [],
+          prompts: parsed.prompts ?? []
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((record): record is RestartRecord => Boolean(record));
+}
+
+function getActiveMessages(messages: ChatMessage[]) {
+  let lastRestartIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (isRestartMarker(messages[index])) {
+      lastRestartIndex = index;
+      break;
+    }
+  }
+  return messages.slice(lastRestartIndex + 1).filter((message) => message.role !== "system");
 }
 
 function getActiveSafetyAlerts(student: StudentWorkspace) {
@@ -690,6 +761,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   const isLocked = activeSafetyAlerts.length >= 3;
   const isFinalized = Boolean(finalPrompt);
   const currentChoices = getChoicesForStage(session, student.currentStage);
+  const activeMessages = getActiveMessages(student.messages);
   const aiUsedCount = student.aiLogs.filter((log) => log.used).length;
   const aiLimit = Math.max(0, session.aiCallsPerStudentLimit ?? 0);
   const aiRemaining = Math.max(0, aiLimit - aiUsedCount);
@@ -710,7 +782,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [student.messages.length]);
+  }, [activeMessages.length]);
 
   function addPasteAlert(content: string) {
     const now = new Date().toISOString();
@@ -770,7 +842,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           config: session,
-          history: student.messages,
+          history: activeMessages,
           message: trimmed,
           currentStage: student.currentStage,
           latestPrompt: latestPrompt?.content,
@@ -910,7 +982,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           <StageProgress session={session} currentStage={student.currentStage} />
         </div>
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          {student.messages.map((message) => (
+          {activeMessages.map((message) => (
             <ChatBubble key={message.id} message={message} />
           ))}
           {isSending && (
@@ -994,8 +1066,12 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             <p className="text-sm font-semibold leading-6 text-muted">학생 답변이 충분히 모이면 이미지 생성 프롬프트가 여기에 표시됩니다.</p>
           )}
         </InfoPanel>
-        <InfoPanel title="진행 안내" icon={<Sparkles size={20} />}>
-          <p className="text-sm font-semibold leading-6 text-muted">챗봇은 선생님이 설정한 질문을 바탕으로 대화를 이어가고, 최종 프롬프트는 학생 답변에 근거해 만듭니다.</p>
+        <InfoPanel title="프롬프트 작성 팁" icon={<Sparkles size={20} />}>
+          <ul className="space-y-2 text-sm font-semibold leading-6 text-muted">
+            <li>누가, 어디에서, 무엇을 하는지 장면처럼 말해 보세요.</li>
+            <li>색, 분위기, 빛, 시점, 그림 스타일을 하나씩 더하면 좋아요.</li>
+            <li>넣고 싶은 것과 빼고 싶은 것을 분명히 말하면 결과가 더 정확해져요.</li>
+          </ul>
         </InfoPanel>
       </aside>
     </section>
@@ -1371,11 +1447,11 @@ function MonitoringView({
   }, [students]);
 
   function downloadCsv() {
-    const header = ["student_name", "current_stage", "last_active_at", "loop_count", "final_prompt", "alert_count", "analysis_summary"];
+    const header = ["student_name", "lesson_topic", "current_stage", "last_active_at", "restart_count", "loop_count", "final_prompt", "alert_count", "analysis_summary"];
     const rows = students.map((student) => {
       const latest = student.prompts.at(-1);
       const final = student.prompts.find((prompt) => prompt.isFinal);
-      return [student.name, student.currentStage, student.lastActiveAt, latest?.loopCount ?? 0, final?.content ?? latest?.content ?? "", student.safetyAlerts.length, student.analysis?.summary ?? ""];
+      return [student.name, student.lessonTopic ?? session.topic, student.currentStage, student.lastActiveAt, getRestartRecords(student).length, latest?.loopCount ?? 0, final?.content ?? latest?.content ?? "", student.safetyAlerts.length, student.analysis?.summary ?? ""];
     });
     const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -1460,10 +1536,11 @@ function MonitoringView({
         </InfoPanel>
       </div>
       <div className="mt-5 overflow-hidden rounded-[8px] border border-line bg-white shadow-soft">
-        <div className="grid grid-cols-[1.1fr_1fr_0.8fr_0.8fr_1.4fr_0.5fr] gap-3 border-b border-line bg-surface px-4 py-3 text-sm font-black text-muted max-lg:hidden">
+        <div className="grid grid-cols-[1fr_1fr_0.9fr_0.7fr_0.7fr_1.4fr_0.5fr] gap-3 border-b border-line bg-surface px-4 py-3 text-sm font-black text-muted max-lg:hidden">
           <span>학생</span>
+          <span>수업 주제</span>
           <span>현재 단계</span>
-          <span>수정</span>
+          <span>처음부터</span>
           <span>경고</span>
           <span>최종 결과물</span>
           <span>삭제</span>
@@ -1483,15 +1560,16 @@ function MonitoringView({
               <button
                 type="button"
                 key={student.id}
-                className="grid w-full gap-3 border-b border-line px-4 py-4 text-left text-sm font-semibold text-ink transition hover:bg-primarySoft/50 last:border-b-0 lg:grid-cols-[1.1fr_1fr_0.8fr_0.8fr_1.4fr_0.5fr]"
+                className="grid w-full gap-3 border-b border-line px-4 py-4 text-left text-sm font-semibold text-ink transition hover:bg-primarySoft/50 last:border-b-0 lg:grid-cols-[1fr_1fr_0.9fr_0.7fr_0.7fr_1.4fr_0.5fr]"
                 onClick={() => setSelectedStudentId(student.id)}
               >
                 <span>
                   <strong className="block text-base">{student.name}</strong>
                   <span className="text-muted">{formatTime(student.lastActiveAt)}</span>
                 </span>
+                <span className="truncate">{student.lessonTopic ?? session.topic}</span>
                 <span>{stageLabel(student.currentStage)}</span>
-                <span>{latest?.loopCount ?? 0}회</span>
+                <span>{getRestartRecords(student).length}회</span>
                 <span className={student.safetyAlerts.length > 0 ? "text-danger" : "text-muted"}>{student.safetyAlerts.length}건</span>
                 <span className="truncate">{final ? final.content : latest ? `초안 v${latest.version}` : "대화 중"}</span>
                 <span>
@@ -1531,13 +1609,16 @@ function MonitoringView({
 function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze }: { session: SessionConfig; student: StudentWorkspace; isAnalyzing: boolean; onClose: () => void; onAnalyze: () => void }) {
   const latest = student.prompts.at(-1);
   const final = student.prompts.find((prompt) => prompt.isFinal);
+  const restartRecords = getRestartRecords(student);
+  const activeMessages = getActiveMessages(student.messages);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-ink/35 p-4">
       <section className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[8px] bg-white p-5 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
           <div>
-            <p className="text-sm font-black text-primary">{session.topic}</p>
+            <p className="text-sm font-black text-primary">{student.lessonTopic ?? session.topic}</p>
+            <p className="mt-1 text-sm font-bold text-muted">처음부터 진행 {restartRecords.length}회</p>
             <h2 className="text-2xl font-black text-ink">{student.name} 대화 기록</h2>
           </div>
           <button className="rounded-[8px] p-2 text-muted hover:bg-surface" onClick={onClose} title="닫기">
@@ -1548,7 +1629,7 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
           <div className="space-y-4">
             <InfoPanel title="전체 대화" icon={<ClipboardList size={20} />}>
               <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                {student.messages.map((message) => (
+                {activeMessages.map((message) => (
                   <div key={message.id} className={`rounded-[8px] p-3 ${message.role === "user" ? "bg-primarySoft" : "bg-surface"}`}>
                     <p className="text-xs font-black text-muted">
                       {message.role === "user" ? "학생" : "챗봇"} � {stageLabel(message.stage)} � {formatTime(message.createdAt)}
@@ -1558,6 +1639,36 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
                 ))}
               </div>
             </InfoPanel>
+            {restartRecords.length > 0 && (
+              <InfoPanel title="이전 진행 기록" icon={<RotateCcw size={20} />}>
+                <div className="space-y-3">
+                  {restartRecords
+                    .slice()
+                    .reverse()
+                    .map((record, index) => (
+                      <details key={record.id} className="rounded-[8px] bg-surface p-3 text-sm font-semibold leading-6 text-ink">
+                        <summary className="cursor-pointer font-black">
+                          {restartRecords.length - index}회차 재시작 전 대화 · {record.topic || session.topic} · {formatTime(record.createdAt)}
+                        </summary>
+                        <div className="mt-3 max-h-[260px] space-y-2 overflow-y-auto pr-1">
+                          {record.messages.length > 0 ? (
+                            record.messages.map((message) => (
+                              <div key={message.id} className={`rounded-[8px] p-3 ${message.role === "user" ? "bg-primarySoft" : "bg-white"}`}>
+                                <p className="text-xs font-black text-muted">
+                                  {message.role === "user" ? "학생" : "챗봇"} · {stageLabel(message.stage)} · {formatTime(message.createdAt)}
+                                </p>
+                                <p className="mt-1 whitespace-pre-wrap">{message.content}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-muted">저장된 이전 대화가 없습니다.</p>
+                          )}
+                        </div>
+                      </details>
+                    ))}
+                </div>
+              </InfoPanel>
+            )}
             <InfoPanel title="경고 기록" icon={<AlertTriangle size={20} />}>
               {student.safetyAlerts.length > 0 ? (
                 <div className="space-y-2">

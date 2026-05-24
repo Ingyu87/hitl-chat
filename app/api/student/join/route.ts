@@ -1,8 +1,9 @@
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { requireSupabaseAdmin } from "@/lib/supabase-admin";
-import type { SessionConfig, StudentWorkspace } from "@/lib/types";
+import type { ChatMessage, SessionConfig, StudentWorkspace } from "@/lib/types";
 
 const AI_ASSIST_LIMIT = 30;
+const RESTART_MARKER_PREFIX = "__HITL_RESTART__:";
 
 type JoinBody = {
   code: string;
@@ -47,21 +48,27 @@ export async function POST(request: Request) {
   const existing = existingRows?.[0];
   const now = new Date().toISOString();
   const shouldReset = Boolean(existing && existing.joined_revision !== (session.revision ?? 1));
+  const existingStudent = existing ? { ...rowToStudent(existing), lessonTopic: session.topic } : null;
   const student: StudentWorkspace =
-    existing && !shouldReset
-      ? rowToStudent(existing)
+    existingStudent && !shouldReset
+      ? existingStudent
       : {
-          id: existing?.id ?? crypto.randomUUID(),
+          id: existingStudent?.id ?? crypto.randomUUID(),
           sessionId: session.id,
+          lessonTopic: session.topic,
           name,
           accessCode: code,
           joinedRevision: session.revision ?? 1,
           currentStage: "orient",
           lastActiveAt: now,
-          messages: [createAssistantMessage(getInitialAssistantMessage(session), "orient")],
+          messages: [
+            ...(existingStudent ? existingStudent.messages : []),
+            ...(existingStudent ? [createRestartMarkerMessage(existingStudent, session, now)] : []),
+            createAssistantMessage(getInitialAssistantMessage(session), "orient")
+          ],
           prompts: [],
-          safetyAlerts: [],
-          aiLogs: []
+          safetyAlerts: existingStudent?.safetyAlerts ?? [],
+          aiLogs: existingStudent?.aiLogs ?? []
         };
 
   const { data: saved, error: saveError } = await supabase
@@ -85,6 +92,40 @@ function createAssistantMessage(content: string, stage: StudentWorkspace["curren
     stage,
     createdAt: new Date().toISOString()
   };
+}
+
+function createRestartMarkerMessage(student: StudentWorkspace, session: SessionConfig, createdAt: string): ChatMessage {
+  const snapshot = {
+    id: crypto.randomUUID(),
+    topic: student.lessonTopic ?? session.topic,
+    createdAt,
+    stage: student.currentStage,
+    messages: getActiveMessages(student.messages),
+    prompts: student.prompts
+  };
+
+  return {
+    id: crypto.randomUUID(),
+    role: "system" as const,
+    content: `${RESTART_MARKER_PREFIX}${JSON.stringify(snapshot)}`,
+    stage: student.currentStage,
+    createdAt
+  };
+}
+
+function isRestartMarker(message: ChatMessage) {
+  return message.role === "system" && message.content.startsWith(RESTART_MARKER_PREFIX);
+}
+
+function getActiveMessages(messages: ChatMessage[]) {
+  let lastRestartIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (isRestartMarker(messages[index])) {
+      lastRestartIndex = index;
+      break;
+    }
+  }
+  return messages.slice(lastRestartIndex + 1).filter((message) => message.role !== "system");
 }
 
 function rowToSession(row: any): SessionConfig {
@@ -114,6 +155,7 @@ function rowToStudent(row: any): StudentWorkspace {
   return {
     id: row.id,
     sessionId: row.session_id,
+    lessonTopic: row.topic,
     name: row.name,
     accessCode: row.access_code,
     joinedRevision: row.joined_revision,
