@@ -11,7 +11,7 @@ type AiCallOptions = {
 };
 
 export function getAiProvider(): AiProvider {
-  return process.env.AI_PROVIDER?.toLowerCase() === "upstage" ? "upstage" : "gemini";
+  return "gemini";
 }
 
 export function hasAiApiKey(provider = getAiProvider()) {

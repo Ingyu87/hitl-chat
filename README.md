@@ -25,9 +25,7 @@ npm run dev
 
 ```text
 GEMINI_API_KEY=
-AI_PROVIDER=upstage
-UPSTAGE_API_KEY=
-UPSTAGE_MODEL=solar-mini
+GEMINI_MODEL=gemini-2.5-flash-lite
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
@@ -37,7 +35,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 기본 모델은 `gemini-2.0-flash`입니다. `GEMINI_MODEL=gemini-2.5-flash`처럼 2.5 이상을 쓰면 thinking 토큰을 줄이기 위해 `thinkingBudget: 0`을 자동 적용합니다.
 
-Upstage를 쓰려면 Vercel 환경변수에 `AI_PROVIDER=upstage`, `UPSTAGE_API_KEY`, `UPSTAGE_MODEL=solar-mini`를 추가합니다. `AI_PROVIDER`를 비워두면 Gemini를 사용합니다.
+현재 운영 기본값은 Gemini입니다. 저렴하게 운영하려면 Vercel 환경변수에 `GEMINI_MODEL=gemini-2.5-flash-lite`를 권장합니다.
 
 ## 배포 메모
 
