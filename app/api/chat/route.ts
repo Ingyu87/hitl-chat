@@ -116,6 +116,10 @@ export async function POST(request: Request) {
 }
 
 async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null> {
+  if ((body.currentStage === "revise" || body.currentStage === "final") && isStudentControlCommand(body.message)) {
+    return null;
+  }
+
   const staticSafety = checkSafety(body.message);
   if (!staticSafety.isSafe && staticSafety.alertType && staticSafety.message) {
     return {
@@ -133,6 +137,10 @@ async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null
   if (aiWarning) return aiWarning;
 
   return null;
+}
+
+function isStudentControlCommand(input: string) {
+  return /(이대로확정|최종확정|확정|좋아|괜찮아|완성|최종|프롬프트|결과|만들어|작성|보여|알려|ok|yes)/i.test(input.replace(/\s/g, ""));
 }
 
 async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {

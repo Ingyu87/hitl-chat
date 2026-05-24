@@ -23,8 +23,8 @@ export async function maybeAssistWithAi(args: {
 
   try {
     const text = await callAiText(buildAssistPrompt(args), {
-      temperature: args.purpose === "question_polish" ? 0.55 : 0.3,
-      maxOutputTokens: args.purpose === "question_polish" ? 1024 : 2048,
+      temperature: args.purpose === "question_polish" ? 0.55 : 0.25,
+      maxOutputTokens: args.purpose === "question_polish" ? 1024 : 1024,
       allowPartial: true
     });
 
@@ -53,7 +53,7 @@ function buildAssistPrompt(args: {
   history: ChatMessage[];
 }) {
   const recent = args.history
-    .slice(-12)
+    .slice(-14)
     .map((message) => `${message.role}(${message.stage}): ${message.content}`)
     .join("\n");
   const latestStudent = [...args.history].reverse().find((message) => message.role === "user")?.content ?? "";
@@ -83,14 +83,13 @@ function buildAssistPrompt(args: {
   }
 
   return [
-    "You are a Korean image-prompt writing assistant for a classroom activity.",
-    "Create a detailed image-generation prompt from ONLY the student's conversation and the teacher settings.",
-    "Return the final prompt text only. No markdown, no explanation.",
-    "The final prompt must be 400 Korean characters or fewer.",
-    "Do not include labels such as topic, student idea, prompt, required elements, or cautions.",
+    "You are a Korean image-prompt writing assistant for an elementary classroom activity.",
+    "Create the final image-generation prompt from ONLY the student conversation and teacher settings.",
+    "Return the prompt text only. No markdown, no labels, no explanation.",
+    "The prompt must be 400 Korean characters or fewer.",
+    "It must be useful for generating an actual image.",
+    "Include: scene, main subject, background, action, composition/view, lighting/mood, style/quality, and exclusions.",
     "Do not invent a new core idea that the student did not provide.",
-    "Do expand visual implementation details that are necessary for an image model: scene, main subject, background, action, composition, lighting, mood, style, texture, quality, and exclusions.",
-    "The output must be at least 5 complete Korean sentences or sentence-like prompt clauses.",
     "Avoid unsafe, sexual, abusive, or off-topic content even if a student requested it.",
     "",
     `Lesson topic: ${args.config.topic}`,
@@ -112,19 +111,19 @@ function isCompleteStudentQuestion(text: string) {
   if (value.length < 12) return false;
   if (/^(student|teacher|chatbot|assistant)\s*:/i.test(value)) return false;
   if (/(작성한다|출력한다|분석한다|안내한다)$/.test(value)) return false;
-  return /[?？!！]$|말해\s*주세요[.!！]?|골라.*[주좋]|해\s*볼까요|어때요|이야기해|알려\s*주세요|생각해\s*주세요|선택해\s*주세요/.test(value);
+  return /[?？!！]$|말해\s*주세요[.!]?|골라.*[주좋]|해\s*볼까요|어때요|이야기해|알려\s*주세요|생각해\s*주세요|선택해\s*주세요/.test(value);
 }
 
 function isDetailedImagePrompt(text: string) {
   const value = text.trim();
-  if (value.length < 160) return false;
+  if (value.length < 80 || value.length > 400) return false;
   const requiredSignals = [
     /장면|scene|상황/,
     /중심|피사체|대상|subject/,
     /배경|장소|background/,
-    /구도|시점|composition|view/,
+    /구도|시점|composition|view|가로|세로/,
     /조명|빛|lighting|분위기/,
-    /스타일|style|사진|일러스트|텍스처/
+    /스타일|style|사진|일러스트|픽셀|수채화|디테일/
   ];
   return requiredSignals.filter((pattern) => pattern.test(value)).length >= 4;
 }
