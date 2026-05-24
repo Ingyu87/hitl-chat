@@ -688,6 +688,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   const stageIndex = getQuestionIndex(session, student.currentStage);
   const activeSafetyAlerts = getActiveSafetyAlerts(student);
   const isLocked = activeSafetyAlerts.length >= 3;
+  const isFinalized = Boolean(finalPrompt);
   const currentChoices = getChoicesForStage(session, student.currentStage);
   const aiUsedCount = student.aiLogs.filter((log) => log.used).length;
   const aiLimit = Math.max(0, session.aiCallsPerStudentLimit ?? 0);
@@ -925,7 +926,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             void sendMessage();
           }}
         >
-          {currentChoices.length > 0 && student.currentStage !== "final" && !isLocked && (
+          {currentChoices.length > 0 && !isFinalized && !isLocked && (
             <div className="mb-3 flex flex-wrap gap-2">
               {currentChoices.map((choice) => (
                 <button
@@ -963,7 +964,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             }}
             onContextMenu={(event) => event.preventDefault()}
             placeholder={student.currentStage === "revise" ? "수정할 점을 쓰거나, 이걸로 확정할래요 라고 입력해줘." : "네 생각을 직접 적어줘."}
-            disabled={student.currentStage === "final" || isLocked}
+            disabled={isFinalized || isLocked}
           />
           <div className="mt-3 flex flex-wrap justify-between gap-3">
             <div className="flex gap-2">
@@ -978,7 +979,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
                 </>
               )}
             </div>
-            <PrimaryButton type="submit" disabled={isSending || student.currentStage === "final" || isLocked}>{student.currentStage === "final" ? "완료" : "보내기"}</PrimaryButton>
+            <PrimaryButton type="submit" disabled={isSending || isFinalized || isLocked}>{isFinalized ? "완료" : "보내기"}</PrimaryButton>
           </div>
         </form>
       </div>

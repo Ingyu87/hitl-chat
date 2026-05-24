@@ -28,7 +28,7 @@ export function getNextFlow(args: {
     };
   }
 
-  if (currentStage === "revise") {
+  if (currentStage === "revise" || currentStage === "final") {
     if (isFinalApproval(studentInput)) {
       return {
         nextStage: "final",
@@ -55,14 +55,6 @@ export function getNextFlow(args: {
       assistantMessage: "수정할 수 있는 횟수를 모두 사용했어요. 지금 프롬프트를 최종본으로 확정할게요.",
       shouldCreatePrompt: false,
       isFinal: true
-    };
-  }
-
-  if (currentStage === "final") {
-    return {
-      nextStage: "final",
-      assistantMessage: "최종 프롬프트가 확정되어 있어요. 선생님 화면에서 결과를 확인할 수 있습니다.",
-      shouldCreatePrompt: false
     };
   }
 

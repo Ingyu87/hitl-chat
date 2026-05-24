@@ -1,7 +1,7 @@
 import { maybeAssistWithAi } from "@/lib/ai-assist";
 import { callAiJson, getAiProvider, hasAiApiKey } from "@/lib/ai-provider";
 import { getNextFlow } from "@/lib/flow";
-import { getQuestionForStage } from "@/lib/question-flow";
+import { getChoicesForStage, getQuestionForStage } from "@/lib/question-flow";
 import { checkSafety } from "@/lib/safety";
 import type { AiAssistLog, ChatMessage, PromptSource, SafetyAlert, SessionConfig, Stage } from "@/lib/types";
 
@@ -136,7 +136,7 @@ async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null
 }
 
 async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
-  if (!hasAiApiKey()) return null;
+  if (!hasAiApiKey() || isChoiceAnswer(body.message, body.config, body.currentStage)) return null;
 
   try {
     const currentFlow = getQuestionForStage(body.config, body.currentStage);
@@ -205,6 +205,7 @@ function createAiLog(purpose: AiAssistLog["purpose"], stage: Stage, used: boolea
 
 function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage): ChatWarning | null {
   const normalized = input.trim().replace(/\s/g, "").toLowerCase();
+  if (isChoiceAnswer(input, config, stage)) return null;
   if (isValidVisualScene(input, config)) return null;
 
   if (isClearlyMeaningless(normalized)) {
@@ -228,8 +229,21 @@ function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage):
   return null;
 }
 
+function isChoiceAnswer(input: string, config: SessionConfig, stage: Stage) {
+  const normalized = normalizeForCompare(input);
+  return getChoicesForStage(config, stage).some((choice) => {
+    const label = normalizeForCompare(choice.label);
+    const value = normalizeForCompare(choice.value);
+    return normalized === label || normalized === value || Boolean(label && normalized.includes(label));
+  });
+}
+
+function normalizeForCompare(input: string) {
+  return input.trim().replace(/\s+/g, "").toLowerCase();
+}
+
 function isClearlyMeaningless(normalized: string) {
-  if (!normalized) return false;
+  if (!normalized) return true;
   const meaninglessTerms = [
     "\ubab0\ub77c",
     "\ubaa8\ub984",
@@ -262,8 +276,8 @@ function isValidVisualScene(input: string, config: SessionConfig) {
     .map((word) => word.trim())
     .filter((word) => word.length >= 2);
   const hasTopicWord = topicWords.some((word) => text.includes(word));
-  const hasSceneWord = /바다|강|하늘|교실|마을|도시|사람|학생|동물|물고기|상황|모습|그림|이미지|빛|분위기|쓰레기|오염|위험|플라스틱|자연|죽은|미래|해결|보여/.test(text);
-  const hasActionOrDescriptor = /하고|보여|움직|밝|어둡|더럽|깨끗|위험|멋진|슬픈|희망|해결/.test(text);
+  const hasSceneWord = /바다|강|하늘|교실|마을|도시|사람|학생|동물|물고기|상황|모습|그림|이미지|빛|분위기|쓰레기|오염|위험|플라스틱|자연|죽은|미래|해결|초원|음식|파티|스타일|픽셀|수채화|사진|보여/.test(text);
+  const hasActionOrDescriptor = /하고|먹|즐기|보여|움직|밝|어둡|더럽|깨끗|위험|멋진|슬픈|희망|평화|신나|역동|해결|그리/.test(text);
   return hasSceneWord && (hasActionOrDescriptor || hasTopicWord || text.length >= 12);
 }
 
