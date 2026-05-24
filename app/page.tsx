@@ -949,7 +949,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   }
 
   return (
-    <section className="page-band grid h-[calc(100vh-73px)] min-h-0 gap-4 overflow-hidden py-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <section className="page-band grid min-h-[calc(100dvh-73px)] gap-4 py-3 sm:py-4 lg:h-[calc(100vh-73px)] lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
       {isLocked && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/45 p-4">
           <form className="w-full max-w-md rounded-[8px] border border-danger/30 bg-white p-5 shadow-soft" onSubmit={unlockStudent}>
@@ -975,23 +975,23 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           </form>
         </div>
       )}
-      <div className="flex min-h-0 flex-col rounded-[8px] border border-line bg-white shadow-soft">
-        <div className="shrink-0 border-b border-line p-4">
+      <div className="flex min-h-[70dvh] flex-col rounded-[8px] border border-line bg-white shadow-soft lg:min-h-0">
+        <div className="shrink-0 border-b border-line p-3 sm:p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-black text-primary">{session.topic}</p>
-              <h1 className="text-2xl font-black text-ink">{student.name}의 프롬프트 대화</h1>
+              <h1 className="truncate text-xl font-black text-ink sm:text-2xl">{student.name}의 프롬프트 대화</h1>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
               <span className="rounded-[8px] bg-secondarySoft px-3 py-2 text-sm font-black text-secondary">{getQuestionFlow(session)[Math.max(stageIndex, 0)]?.label ?? "진행 중"}</span>
-              <SecondaryButton type="button" onClick={onReset} icon={<RotateCcw size={16} />}>
+              <SecondaryButton type="button" className="px-3 py-2" onClick={onReset} icon={<RotateCcw size={16} />}>
                 처음부터 진행
               </SecondaryButton>
             </div>
           </div>
           <StageProgress session={session} currentStage={student.currentStage} />
         </div>
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <div ref={scrollRef} className="max-h-[52dvh] min-h-[280px] flex-1 space-y-4 overflow-y-auto p-3 sm:p-4 lg:max-h-none lg:min-h-0">
           {activeMessages.map((message) => (
             <ChatBubble key={message.id} message={message} />
           ))}
@@ -1002,19 +1002,19 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           )}
         </div>
         <form
-          className="shrink-0 border-t border-line p-4"
+          className="shrink-0 border-t border-line p-3 sm:p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void sendMessage();
           }}
         >
           {currentChoices.length > 0 && !isFinalized && !isLocked && (
-            <div className="mb-3 flex flex-wrap gap-2">
+            <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
               {currentChoices.map((choice) => (
                 <button
                   key={`${choice.label}-${choice.value}`}
                   type="button"
-                  className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-left text-sm font-black text-ink hover:border-primary hover:bg-primarySoft"
+                  className="focus-ring min-h-11 rounded-[8px] border border-line bg-white px-3 py-2 text-left text-sm font-black text-ink hover:border-primary hover:bg-primarySoft"
                   onClick={() => void sendMessage(choice.value)}
                   title={choice.description}
                   disabled={isSending}
@@ -1027,7 +1027,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           )}
           {sendError && <p className="mb-3 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{sendError}</p>}
           <textarea
-            className="focus-ring h-20 w-full resize-none rounded-[8px] border border-line bg-surface p-3 font-semibold leading-7 text-ink"
+            className="focus-ring h-24 w-full resize-none rounded-[8px] border border-line bg-surface p-3 text-base font-semibold leading-7 text-ink sm:h-20"
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onPaste={(event) => {
@@ -1049,24 +1049,24 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             placeholder={student.currentStage === "revise" ? "수정할 점을 쓰거나, 이걸로 확정할래요 라고 입력해줘." : "네 생각을 직접 적어줘."}
             disabled={isFinalized || isLocked}
           />
-          <div className="mt-3 flex flex-wrap justify-between gap-3">
-            <div className="flex gap-2">
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-between">
+            <div className="grid gap-2 sm:flex">
               {student.currentStage === "revise" && (
                 <>
-                  <SecondaryButton type="button" onClick={() => void sendMessage("조금 더 구체적으로 바꿔줘")}>
+                  <SecondaryButton type="button" className="justify-center" onClick={() => void sendMessage("조금 더 구체적으로 바꿔줘")}>
                     더 구체적으로
                   </SecondaryButton>
-                  <SecondaryButton type="button" onClick={() => void sendMessage("이걸로 확정할래요")}>
+                  <SecondaryButton type="button" className="justify-center" onClick={() => void sendMessage("이걸로 확정할래요")}>
                     이걸로 확정
                   </SecondaryButton>
                 </>
               )}
             </div>
-            <PrimaryButton type="submit" disabled={isSending || isFinalized || isLocked}>{isFinalized ? "완료" : "보내기"}</PrimaryButton>
+            <PrimaryButton type="submit" className="justify-center sm:min-w-24" disabled={isSending || isFinalized || isLocked}>{isFinalized ? "완료" : "보내기"}</PrimaryButton>
           </div>
         </form>
       </div>
-      <aside className="flex min-h-0 flex-col gap-4 overflow-hidden">
+      <aside className="flex min-h-0 flex-col gap-4 lg:overflow-hidden">
         <InfoPanel title="AI 보조 사용량" icon={<Sparkles size={20} />}>
           <p className={`rounded-[8px] px-3 py-2 text-sm font-black ${aiCounterClassName}`}>{aiCounterText}</p>
         </InfoPanel>
