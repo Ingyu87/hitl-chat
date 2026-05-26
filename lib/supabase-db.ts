@@ -162,17 +162,26 @@ export async function clearStudentRows(sessionId: string) {
 
 export async function clearStudentRowsForTeacher(teacherId: string) {
   if (!supabaseBrowser) return;
-  const { data: sessionRows, error: sessionError } = await supabaseBrowser
-    .from("sessions")
-    .select("id")
-    .eq("teacher_id", teacherId);
-  if (sessionError) throw sessionError;
+  const { data } = await supabaseBrowser.auth.getSession();
+  const token = data.session?.access_token;
 
-  const sessionIds = (sessionRows ?? []).map((row) => row.id as string);
-  if (!sessionIds.length) return;
+  if (!token) {
+    throw new Error("로그인이 필요합니다.");
+  }
 
-  const { error } = await supabaseBrowser.from("students").delete().in("session_id", sessionIds);
-  if (error) throw error;
+  const response = await fetch("/api/student/clear", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ teacherId })
+  });
+
+  if (!response.ok) {
+    const result = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(result?.error ?? "전체 학생 데이터 삭제에 실패했습니다.");
+  }
 }
 
 export function createEmptySession(): SessionConfig {
