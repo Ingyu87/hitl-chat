@@ -27,7 +27,7 @@ import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { limitPromptLength } from "@/lib/prompt-builder";
 import { buildDefaultQuestionFlow, getChoicesForStage, getQuestionIndex, getQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
-import { clearStudentRows, clearStudentRowsForTeacher, createEmptySession, deleteStudentRow, getCurrentTeacher, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
+import { clearStudentRows, clearStudentRowsForTeacher, createEmptySession, deleteProjectRow, deleteStudentRow, getCurrentTeacher, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
@@ -264,6 +264,32 @@ export default function AppPage() {
     setUi((current) => ({ ...current, view: "teacher-settings", activeStudentId: null, isTeacherStudentPreview: false }));
   }
 
+  async function deleteProject(projectId: string) {
+    const project = data.projects.find((item) => item.id === projectId);
+    const title = project?.title || project?.topic || "이 프로젝트";
+    if (!window.confirm(`${title}을(를) 삭제할까요?\n학생 활동 기록도 함께 삭제됩니다.`)) return;
+
+    try {
+      await deleteProjectRow(projectId);
+      const remainingProjects = data.projects.filter((item) => item.id !== projectId);
+      const remainingStudents = data.projectStudents.filter((student) => student.sessionId !== projectId);
+      const nextProject = remainingProjects[0] ?? createEmptySession();
+      const nextStudents = remainingStudents.filter((student) => student.sessionId === nextProject.id);
+
+      setData({
+        projects: remainingProjects.length > 0 ? remainingProjects : [nextProject],
+        activeProjectId: nextProject.id,
+        session: nextProject,
+        students: nextStudents,
+        projectStudents: remainingProjects.length > 0 ? remainingStudents : []
+      });
+      setUi((current) => ({ ...current, view: remainingProjects.length > 0 ? "home" : "teacher-settings", activeStudentId: null, isTeacherStudentPreview: false }));
+      if (teacherUser) void refreshProjects(teacherUser);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "프로젝트를 삭제하지 못했습니다.");
+    }
+  }
+
   function upsertStudent(student: StudentWorkspace) {
     if (student.sessionId) {
       void fetch("/api/student/save", {
@@ -395,6 +421,7 @@ export default function AppPage() {
           activeProjectId={data.activeProjectId}
           onOpenProject={(projectId) => void openProject(projectId, "monitoring")}
           onCreateProject={createNewProject}
+          onDeleteProject={(projectId) => void deleteProject(projectId)}
           onRefresh={() => void refreshProjects()}
           isTeacherAuthenticated={Boolean(teacherUser)}
         />
@@ -691,6 +718,7 @@ function HomeView({
   activeProjectId,
   onOpenProject,
   onCreateProject,
+  onDeleteProject,
   onRefresh,
   isTeacherAuthenticated
 }: {
@@ -699,6 +727,7 @@ function HomeView({
   activeProjectId: string | null;
   onOpenProject: (projectId: string) => void;
   onCreateProject: () => void;
+  onDeleteProject: (projectId: string) => void;
   onRefresh: () => void;
   isTeacherAuthenticated: boolean;
 }) {
@@ -751,7 +780,28 @@ function HomeView({
                     <p className="text-xs font-black text-primary">{project.isActive ? "진행 중" : "보관됨"}</p>
                     <h2 className="mt-1 text-lg font-black text-ink">{project.title || project.topic || "새 프로젝트"}</h2>
                   </div>
-                  {isActiveProject && <Check className="text-primary" size={18} />}
+                  <span className="flex items-center gap-2">
+                    {isActiveProject && <Check className="text-primary" size={18} />}
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="inline-flex rounded-[8px] p-2 text-danger hover:bg-dangerSoft"
+                      title="프로젝트 삭제"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDeleteProject(project.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onDeleteProject(project.id);
+                        }
+                      }}
+                    >
+                      <Trash2 size={18} />
+                    </span>
+                  </span>
                 </div>
                 <p className="mt-3 line-clamp-2 text-sm font-semibold leading-6 text-muted">{project.topic || "수업 주제가 아직 없습니다."}</p>
                 <div className="mt-4 grid grid-cols-3 gap-2 text-sm">

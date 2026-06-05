@@ -195,6 +195,30 @@ export async function deleteStudentRow(studentId: string) {
   }
 }
 
+export async function deleteProjectRow(projectId: string) {
+  if (!supabaseBrowser) return;
+  const { data } = await supabaseBrowser.auth.getSession();
+  const token = data.session?.access_token;
+
+  if (!token) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  const response = await fetch("/api/project/delete", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ projectId })
+  });
+
+  if (!response.ok) {
+    const result = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(result?.error ?? "프로젝트를 삭제하지 못했습니다.");
+  }
+}
+
 export async function clearStudentRows(sessionId: string) {
   if (!supabaseBrowser) return;
   const { error } = await supabaseBrowser.from("students").delete().eq("session_id", sessionId);
