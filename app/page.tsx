@@ -353,14 +353,20 @@ export default function AppPage() {
   }
 
   async function clearStudents() {
+    if (!window.confirm("이 프로젝트의 학생 활동 기록을 모두 삭제할까요?")) return;
+
     try {
       if (teacherUser) {
         await clearStudentRowsForTeacher(teacherUser.id, data.session.id);
       } else {
         await clearStudentRows(data.session.id);
       }
-      setData((current) => replaceProjectStudents(current, current.session.id, []));
+      const remainingStudents = teacherUser ? await loadStudentsForSession(data.session.id) : [];
+      setData((current) => replaceProjectStudents(current, current.session.id, remainingStudents));
       setUi((current) => ({ ...current, activeStudentId: null }));
+      if (remainingStudents.length > 0) {
+        window.alert(`삭제 요청 후에도 ${remainingStudents.length}명의 기록이 남아 있습니다. 잠시 뒤 다시 시도해 주세요.`);
+      }
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "학생 데이터를 삭제하지 못했습니다.");
     }

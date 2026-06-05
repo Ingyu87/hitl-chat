@@ -32,13 +32,13 @@ export async function POST(request: Request) {
 
   const sessionIds = (sessionRows ?? []).map((row) => row.id as string);
   if (!sessionIds.length) {
-    return Response.json({ deleted: 0 });
+    return Response.json({ error: "삭제할 수업을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  const { error: deleteError, count } = await supabase
-    .from("students")
-    .delete({ count: "exact" })
-    .in("session_id", sessionIds);
+  const deleteQuery = supabase.from("students").delete({ count: "exact" });
+  const { error: deleteError, count } = body.sessionId
+    ? await deleteQuery.eq("session_id", body.sessionId)
+    : await deleteQuery.in("session_id", sessionIds);
 
   if (deleteError) {
     return Response.json({ error: deleteError.message }, { status: 500 });
