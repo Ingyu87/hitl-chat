@@ -2,7 +2,7 @@ import { getInitialAssistantMessage } from "@/lib/flow";
 import { requireSupabaseAdmin } from "@/lib/supabase-admin";
 import type { ChatMessage, SessionConfig, StudentWorkspace } from "@/lib/types";
 
-const AI_ASSIST_LIMIT = 30;
+const AI_ASSIST_LIMIT = 15;
 const RESTART_MARKER_PREFIX = "__HITL_RESTART__:";
 
 type JoinBody = {

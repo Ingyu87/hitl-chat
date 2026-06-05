@@ -11,7 +11,6 @@ import {
   Loader2,
   LogOut,
   LogIn,
-  Monitor,
   Plus,
   RotateCcw,
   Save,
@@ -28,15 +27,18 @@ import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { limitPromptLength } from "@/lib/prompt-builder";
 import { buildDefaultQuestionFlow, getChoicesForStage, getQuestionIndex, getQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
-import { clearStudentRows, clearStudentRowsForTeacher, deleteStudentRow, getCurrentTeacher, loadStudentsForTeacher, loadTeacherData, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
+import { clearStudentRows, clearStudentRowsForTeacher, createEmptySession, deleteStudentRow, getCurrentTeacher, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
 type TeacherView = "teacher-settings" | "monitoring";
 
 type AppData = {
+  projects: SessionConfig[];
+  activeProjectId: string | null;
   session: SessionConfig;
   students: StudentWorkspace[];
+  projectStudents: StudentWorkspace[];
 };
 
 type UiState = {
@@ -49,14 +51,17 @@ type UiState = {
 
 const DATA_STORAGE_KEY = "hitl-chat-state-v2";
 const UI_STORAGE_KEY = "hitl-chat-ui-v2";
-const AI_ASSIST_LIMIT = 30;
+const AI_ASSIST_LIMIT = 15;
 const RESTART_MARKER_PREFIX = "__HITL_RESTART__:";
 const APP_NAME = "생각잇기 프롬프트";
 const APP_SUBTITLE = "학생 답변 기반 이미지 생성 프롬프트 수업 도구";
 
 const initialData: AppData = {
+  projects: [DEFAULT_SESSION],
+  activeProjectId: DEFAULT_SESSION.id,
   session: DEFAULT_SESSION,
-  students: []
+  students: [],
+  projectStudents: []
 };
 
 const initialUi: UiState = {
@@ -98,7 +103,18 @@ export default function AppPage() {
       const user = await getCurrentTeacher();
       if (user) {
         setTeacherUser(user);
-        nextData = await loadTeacherData(user);
+        const teacherData = await loadTeacherData(user);
+        const savedProjectId = nextData.activeProjectId;
+        nextData = migrateSavedData(teacherData);
+        if (savedProjectId && nextData.projects.some((project) => project.id === savedProjectId)) {
+          const projectData = await loadProjectData(savedProjectId);
+          nextData = migrateSavedData({
+            ...nextData,
+            activeProjectId: savedProjectId,
+            session: projectData.session,
+            students: projectData.students
+          });
+        }
         nextUi = { ...nextUi, isTeacherUnlocked: true, view: nextUi.view === "teacher-auth" ? "home" : nextUi.view };
       }
 
@@ -157,12 +173,12 @@ export default function AppPage() {
     if (!isLoaded || !teacherUser) return;
 
     const pollTimer = window.setInterval(async () => {
-      const students = await loadStudentsForTeacher(teacherUser.id);
-      setData((current) => ({ ...current, students }));
+      const students = await loadStudentsForSession(data.session.id);
+      setData((current) => replaceProjectStudents({ ...current, students }, current.session.id, students));
     }, 3000);
 
     return () => window.clearInterval(pollTimer);
-  }, [isLoaded, teacherUser]);
+  }, [data.session.id, isLoaded, teacherUser]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -190,17 +206,62 @@ export default function AppPage() {
 
       if (teacherUser) {
         void saveTeacherSession(nextSession, teacherUser).then((savedSession) => {
-          setData((latest) => ({ ...latest, session: savedSession }));
+          setData((latest) => ({ ...latest, session: savedSession, activeProjectId: savedSession.id, projects: upsertProject(latest.projects, savedSession) }));
+          void refreshProjects(teacherUser);
         });
       }
 
       return {
+        ...current,
+        projects: upsertProject(current.projects, nextSession),
+        activeProjectId: nextSession.id,
         session: {
           ...nextSession
-        },
-        students: current.students
+        }
       };
     });
+  }
+
+  async function refreshProjects(user = teacherUser) {
+    if (!user) return;
+    const projects = await loadTeacherProjects(user);
+    const allStudents = await loadStudentsForTeacher(user.id);
+    setData((current) => ({
+      ...current,
+      projects: projects.length > 0 ? projects.map((project) => (project.id === current.session.id ? current.session : project)) : [current.session],
+      projectStudents: allStudents
+    }));
+  }
+
+  async function openProject(projectId: string, target: TeacherView | "home" = "monitoring") {
+    const projectData = await loadProjectData(projectId);
+    setData((current) => {
+      const nextSession = migrateSession(projectData.session);
+      return replaceProjectStudents(
+        {
+          ...current,
+          projects: upsertProject(current.projects, nextSession),
+          activeProjectId: nextSession.id,
+          session: nextSession,
+          students: projectData.students
+        },
+        nextSession.id,
+        projectData.students
+      );
+    });
+    setUi((current) => ({ ...current, view: target, activeStudentId: null, isTeacherStudentPreview: false }));
+  }
+
+  function createNewProject() {
+    const nextSession = createEmptySession();
+    setData((current) => ({
+      ...current,
+      projects: [nextSession, ...current.projects],
+      activeProjectId: nextSession.id,
+      session: nextSession,
+      students: []
+    }));
+    setUi((current) => ({ ...current, view: "teacher-settings", activeStudentId: null, isTeacherStudentPreview: false }));
   }
 
   function upsertStudent(student: StudentWorkspace) {
@@ -216,7 +277,10 @@ export default function AppPage() {
       ...current,
       students: current.students.some((item) => item.id === student.id)
         ? current.students.map((item) => (item.id === student.id ? student : item))
-        : [...current.students, student]
+        : [...current.students, student],
+      projectStudents: current.projectStudents.some((item) => item.id === student.id)
+        ? current.projectStudents.map((item) => (item.id === student.id ? student : item))
+        : [...current.projectStudents, student]
     }));
   }
 
@@ -248,20 +312,32 @@ export default function AppPage() {
     }, 0);
   }
 
-  function deleteStudent(studentId: string) {
-    void deleteStudentRow(studentId);
-    setData((current) => ({ ...current, students: current.students.filter((student) => student.id !== studentId) }));
-    setUi((current) => ({ ...current, activeStudentId: current.activeStudentId === studentId ? null : current.activeStudentId }));
+  async function deleteStudent(studentId: string) {
+    try {
+      await deleteStudentRow(studentId);
+      setData((current) => ({
+        ...current,
+        students: current.students.filter((student) => student.id !== studentId),
+        projectStudents: current.projectStudents.filter((student) => student.id !== studentId)
+      }));
+      setUi((current) => ({ ...current, activeStudentId: current.activeStudentId === studentId ? null : current.activeStudentId }));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "학생 데이터를 삭제하지 못했습니다.");
+    }
   }
 
-  function clearStudents() {
-    if (teacherUser) {
-      void clearStudentRowsForTeacher(teacherUser.id);
-    } else {
-      void clearStudentRows(data.session.id);
+  async function clearStudents() {
+    try {
+      if (teacherUser) {
+        await clearStudentRowsForTeacher(teacherUser.id, data.session.id);
+      } else {
+        await clearStudentRows(data.session.id);
+      }
+      setData((current) => replaceProjectStudents(current, current.session.id, []));
+      setUi((current) => ({ ...current, activeStudentId: null }));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "학생 데이터를 삭제하지 못했습니다.");
     }
-    setData((current) => ({ ...current, students: [] }));
-    setUi((current) => ({ ...current, activeStudentId: null }));
   }
 
   function resetDemo() {
@@ -311,14 +387,15 @@ export default function AppPage() {
 
   return (
     <main className="app-shell">
-      <TopBar view={ui.view} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} isTeacherStudentPreview={ui.isTeacherStudentPreview} teacherUser={teacherUser} onLogout={() => void logoutTeacher()} />
+      <TopBar view={ui.view} session={data.session} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} isTeacherStudentPreview={ui.isTeacherStudentPreview} teacherUser={teacherUser} onLogout={() => void logoutTeacher()} />
       {ui.view === "home" && (
         <HomeView
-          session={data.session}
-          setView={setView}
-          openTeacherView={openTeacherView}
-          openStudentPreview={openStudentPreview}
-          resetDemo={resetDemo}
+          projects={data.projects}
+          students={data.projectStudents}
+          activeProjectId={data.activeProjectId}
+          onOpenProject={(projectId) => void openProject(projectId, "monitoring")}
+          onCreateProject={createNewProject}
+          onRefresh={() => void refreshProjects()}
           isTeacherAuthenticated={Boolean(teacherUser)}
         />
       )}
@@ -327,7 +404,14 @@ export default function AppPage() {
           session={data.session}
           students={data.students}
           onEnter={(student, session) => {
-            if (session) setData((current) => ({ ...current, session }));
+            if (session) {
+              setData((current) => ({
+                ...current,
+                session,
+                activeProjectId: session.id,
+                projects: upsertProject(current.projects, session)
+              }));
+            }
             upsertStudent(student);
             setUi((current) => ({ ...current, activeStudentId: student.id, view: "student-chat" }));
           }}
@@ -354,27 +438,54 @@ export default function AppPage() {
 }
 
 function migrateSavedData(data: AppData): AppData {
-  const session = {
-    ...DEFAULT_SESSION,
-    ...data.session,
-    requiredElements: data.session.requiredElements ?? [],
-    constraints: data.session.constraints ?? [],
-    questionFlow: data.session.questionFlow ?? [],
-    revision: data.session.revision ?? 1,
-    updatedAt: data.session.updatedAt ?? new Date(0).toISOString(),
-    aiCallsPerStudentLimit: AI_ASSIST_LIMIT
-  };
+  const session = migrateSession(data.session ?? DEFAULT_SESSION);
   const hasMatchingQuestionFlow = questionFlowMatchesTopic(session);
+  const nextSession = {
+    ...session,
+    questionFlow: hasMatchingQuestionFlow ? session.questionFlow : [],
+    lessonDesigned: Boolean(session.lessonDesigned && session.questionFlow.length > 0 && hasMatchingQuestionFlow),
+    isActive: Boolean(session.isActive && session.lessonDesigned && hasMatchingQuestionFlow)
+  };
+  const projects = (data.projects?.length ? data.projects : [nextSession]).map(migrateSession);
+  const activeProjectId = data.activeProjectId && projects.some((project) => project.id === data.activeProjectId) ? data.activeProjectId : nextSession.id;
 
   return {
     ...data,
-    session: {
-      ...session,
-      questionFlow: hasMatchingQuestionFlow ? session.questionFlow : [],
-      lessonDesigned: Boolean(session.lessonDesigned && session.questionFlow.length > 0 && hasMatchingQuestionFlow),
-      isActive: Boolean(session.isActive && session.lessonDesigned && hasMatchingQuestionFlow)
-    },
-    students: data.students ?? []
+    projects: upsertProject(projects, nextSession),
+    activeProjectId,
+    session: nextSession,
+    students: data.students ?? [],
+    projectStudents: data.projectStudents ?? data.students ?? []
+  };
+}
+
+function migrateSession(session: SessionConfig): SessionConfig {
+  return {
+    ...DEFAULT_SESSION,
+    ...session,
+    requiredElements: session.requiredElements ?? [],
+    constraints: session.constraints ?? [],
+    questionFlow: session.questionFlow ?? [],
+    revision: session.revision ?? 1,
+    updatedAt: session.updatedAt ?? new Date(0).toISOString(),
+    aiCallsPerStudentLimit: AI_ASSIST_LIMIT
+  };
+}
+
+function upsertProject(projects: SessionConfig[], session: SessionConfig) {
+  const nextProjects = projects.some((project) => project.id === session.id)
+    ? projects.map((project) => (project.id === session.id ? session : project))
+    : [session, ...projects];
+
+  return nextProjects.sort((left, right) => parseTime(right.updatedAt) - parseTime(left.updatedAt));
+}
+
+function replaceProjectStudents(data: AppData, sessionId: string, students: StudentWorkspace[]): AppData {
+  const otherStudents = data.projectStudents.filter((student) => student.sessionId !== sessionId);
+  return {
+    ...data,
+    students,
+    projectStudents: [...otherStudents, ...students]
   };
 }
 
@@ -494,23 +605,6 @@ function parseTime(value?: string) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-function mergeRemoteData(current: AppData, remote: AppData): AppData {
-  const currentSessionTime = parseTime(current.session.updatedAt);
-  const remoteSessionTime = parseTime(remote.session.updatedAt);
-  const session = remoteSessionTime > currentSessionTime ? remote.session : current.session;
-  const studentsById = new Map<string, StudentWorkspace>();
-
-  for (const student of current.students) studentsById.set(student.id, student);
-  for (const remoteStudent of remote.students) {
-    const localStudent = studentsById.get(remoteStudent.id);
-    if (!localStudent || parseTime(remoteStudent.lastActiveAt) >= parseTime(localStudent.lastActiveAt)) {
-      studentsById.set(remoteStudent.id, remoteStudent);
-    }
-  }
-
-  return { session, students: Array.from(studentsById.values()) };
-}
-
 function buildLocalAnalysisFallback(student: StudentWorkspace): StudentAnalysis {
   const latest = student.prompts.at(-1);
   const final = student.prompts.find((prompt) => prompt.isFinal);
@@ -528,6 +622,7 @@ function buildLocalAnalysisFallback(student: StudentWorkspace): StudentAnalysis 
 
 function TopBar({
   view,
+  session,
   setView,
   openTeacherView,
   openStudentPreview,
@@ -536,6 +631,7 @@ function TopBar({
   onLogout
 }: {
   view: View;
+  session: SessionConfig;
   setView: (view: View) => void;
   openTeacherView: (view: TeacherView) => void;
   openStudentPreview: () => void;
@@ -560,6 +656,9 @@ function TopBar({
         </button>
         {!shouldHideTeacherNav && (
           <nav className="flex items-center gap-2 overflow-x-auto">
+            <NavButton active={view === "home"} onClick={() => setView("home")}>
+              프로젝트
+            </NavButton>
             <NavButton active={view === "teacher-settings"} onClick={() => openTeacherView("teacher-settings")}>
               수업 설정
             </NavButton>
@@ -578,72 +677,94 @@ function TopBar({
           </nav>
         )}
       </div>
+      {teacherUser && !shouldHideTeacherNav && (
+        <div className="page-band pb-3 text-xs font-black text-muted">
+          현재 프로젝트: <span className="text-primary">{session.title || session.topic || "새 프로젝트"}</span>
+        </div>
+      )}
     </header>
   );
 }
-
 function HomeView({
-  session,
-  setView,
-  openTeacherView,
-  openStudentPreview,
-  resetDemo,
+  projects,
+  students,
+  activeProjectId,
+  onOpenProject,
+  onCreateProject,
+  onRefresh,
   isTeacherAuthenticated
 }: {
-  session: SessionConfig;
-  setView: (view: View) => void;
-  openTeacherView: (view: TeacherView) => void;
-  openStudentPreview: () => void;
-  resetDemo: () => void;
+  projects: SessionConfig[];
+  students: StudentWorkspace[];
+  activeProjectId: string | null;
+  onOpenProject: (projectId: string) => void;
+  onCreateProject: () => void;
+  onRefresh: () => void;
   isTeacherAuthenticated: boolean;
 }) {
-  const studentLink = buildStudentLink(session.accessCode);
-  const isStudentLinkReady = Boolean(session.lessonDesigned && session.isActive && session.questionFlow.length > 0);
+  const studentCountByProject = useMemo(() => {
+    const counts = new Map<string, { total: number; final: number }>();
+    for (const student of students) {
+      if (!student.sessionId) continue;
+      const current = counts.get(student.sessionId) ?? { total: 0, final: 0 };
+      current.total += 1;
+      if (student.prompts.some((prompt) => prompt.isFinal)) current.final += 1;
+      counts.set(student.sessionId, current);
+    }
+    return counts;
+  }, [students]);
 
   return (
-    <section className="page-band grid gap-8 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
-      <div className="py-6">
-        <p className="mb-4 inline-flex items-center gap-2 rounded-[8px] border border-primary/20 bg-primarySoft px-3 py-2 text-sm font-black text-primary">
-          <Sparkles size={16} /> 교사용 수업 콘솔
-        </p>
-        <h1 className="max-w-3xl text-4xl font-black leading-tight text-ink sm:text-5xl">학생의 생각을 모아 이미지 생성 프롬프트로 완성합니다.</h1>
-        <p className="mt-5 max-w-2xl text-lg font-semibold leading-8 text-muted">
-          교사는 수업 주제와 질문 흐름을 설계하고, 챗봇은 학생 답변 맥락에 맞게 질문을 이어갑니다. 최종 프롬프트는 학생 답변에 근거해 만들고 학생이 승인합니다.
-        </p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <PrimaryButton onClick={() => openTeacherView("teacher-settings")} icon={<Settings size={18} />}>
-            수업 설정 시작
-          </PrimaryButton>
-          <SecondaryButton onClick={() => openTeacherView("monitoring")} icon={<Monitor size={18} />}>
-            모니터링 열기
-          </SecondaryButton>
-          <GhostButton onClick={resetDemo}>수업 초기화</GhostButton>
+    <section className="page-band py-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-primary">교사용 프로젝트</p>
+          <h1 className="text-3xl font-black text-ink">프로젝트 목록</h1>
         </div>
-      </div>
-      <div className="grid gap-4">
-        {isTeacherAuthenticated ? (
-          <InfoPanel title="학생 안내 정보" icon={<ClipboardList size={20} />}>
-            <dl className="grid gap-3 text-sm">
-              <InfoRow label="학생 입장 링크" value={isStudentLinkReady ? studentLink : "질문 흐름 승인 후 생성됩니다"} />
-              <InfoRow label="학생 접속 코드" value={session.accessCode} />
-              <InfoRow label="수업 주제" value={session.topic} />
-              <InfoRow label="AI 역할" value="질문 진행, 안전 판단, 프롬프트 생성, 교사용 분석" />
-            </dl>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<KeyRound size={18} />}>
-                학생 링크 복사
-              </SecondaryButton>
-            </div>
-          </InfoPanel>
-        ) : (
-          <InfoPanel title="교사 로그인 필요" icon={<ShieldCheck size={20} />}>
-            <p className="text-sm font-semibold leading-6 text-muted">학생 입장 링크와 접속 코드는 교사 로그인 후 확인할 수 있습니다.</p>
-            <PrimaryButton className="mt-4" onClick={() => openTeacherView("teacher-settings")} icon={<LogIn size={18} />}>
-              교사 로그인
-            </PrimaryButton>
-          </InfoPanel>
+        {isTeacherAuthenticated && (
+          <div className="flex flex-wrap gap-2">
+            <SecondaryButton type="button" onClick={onRefresh} icon={<RotateCcw size={18} />}>새로고침</SecondaryButton>
+            <PrimaryButton type="button" onClick={onCreateProject} icon={<Plus size={18} />}>새 프로젝트</PrimaryButton>
+          </div>
         )}
       </div>
+      {!isTeacherAuthenticated ? (
+        <div className="mt-5">
+          <InfoPanel title="교사 로그인이 필요합니다" icon={<ShieldCheck size={20} />}>
+            <p className="text-sm font-semibold leading-6 text-muted">프로젝트 목록과 학생 기록은 교사 로그인 후 확인할 수 있습니다.</p>
+          </InfoPanel>
+        </div>
+      ) : projects.length === 0 ? (
+        <div className="mt-5 rounded-[8px] border border-line bg-white p-8 text-center shadow-soft">
+          <p className="font-bold text-muted">아직 프로젝트가 없습니다.</p>
+          <PrimaryButton className="mt-4" onClick={onCreateProject} icon={<Plus size={18} />}>새 프로젝트</PrimaryButton>
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {projects.map((project) => {
+            const counts = studentCountByProject.get(project.id) ?? { total: 0, final: 0 };
+            const isActiveProject = project.id === activeProjectId;
+            return (
+              <button type="button" key={project.id} className={`rounded-[8px] border bg-white p-4 text-left shadow-soft transition hover:border-primary ${isActiveProject ? "border-primary" : "border-line"}`} onClick={() => onOpenProject(project.id)}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black text-primary">{project.isActive ? "진행 중" : "보관됨"}</p>
+                    <h2 className="mt-1 text-lg font-black text-ink">{project.title || project.topic || "새 프로젝트"}</h2>
+                  </div>
+                  {isActiveProject && <Check className="text-primary" size={18} />}
+                </div>
+                <p className="mt-3 line-clamp-2 text-sm font-semibold leading-6 text-muted">{project.topic || "수업 주제가 아직 없습니다."}</p>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                  <InfoRow label="학생" value={`${counts.total}명`} />
+                  <InfoRow label="완료" value={`${counts.final}명`} />
+                  <InfoRow label="코드" value={project.accessCode} />
+                </div>
+                <p className="mt-3 text-xs font-bold text-muted">최근 수정 {formatDateTime(project.updatedAt)}</p>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
@@ -1518,7 +1639,7 @@ function MonitoringView({
             {session.isActive ? "수업 종료" : "수업 시작"}
           </SecondaryButton>
           <SecondaryButton onClick={onClearStudents} icon={<Trash2 size={18} />}>
-            전체 학생 데이터 삭제
+            이 프로젝트 학생 삭제
           </SecondaryButton>
           <PrimaryButton onClick={downloadCsv} icon={<Download size={18} />}>
             CSV 내보내기
@@ -1590,10 +1711,10 @@ function MonitoringView({
                     className="inline-flex text-danger"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onDeleteStudent(student.id);
+                      void onDeleteStudent(student.id);
                     }}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") onDeleteStudent(student.id);
+                      if (event.key === "Enter") void onDeleteStudent(student.id);
                     }}
                   >
                     <Trash2 size={18} />
@@ -1964,4 +2085,14 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function formatDateTime(value?: string) {
+  const date = value ? new Date(value) : new Date(0);
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }

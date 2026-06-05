@@ -20,7 +20,7 @@ export const DEFAULT_SESSION: SessionConfig = {
   aiEnabled: true,
   aiProvider: "gemini",
   aiUsagePolicy: "questions_and_prompts",
-  aiCallsPerStudentLimit: 30,
+  aiCallsPerStudentLimit: 15,
   accessCode: "HITL35",
   isActive: false,
   revision: 1,

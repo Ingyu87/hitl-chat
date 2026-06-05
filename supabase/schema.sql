@@ -18,7 +18,7 @@ create table if not exists sessions (
   ai_enabled boolean not null default true,
   ai_provider text not null default 'gemini',
   ai_usage_policy text not null default 'questions_and_prompts',
-  ai_calls_per_student_limit int not null default 30,
+  ai_calls_per_student_limit int not null default 15,
   access_code text not null,
   lesson_designed boolean not null default false,
   is_active boolean not null default false,
@@ -49,7 +49,7 @@ create table if not exists students (
 alter table sessions add column if not exists lesson_designed boolean not null default false;
 alter table sessions add column if not exists revision int not null default 1;
 alter table sessions add column if not exists updated_at timestamptz not null default now();
-alter table sessions alter column ai_calls_per_student_limit set default 30;
+alter table sessions alter column ai_calls_per_student_limit set default 15;
 alter table sessions alter column ai_enabled set default true;
 
 alter table students add column if not exists joined_revision int not null default 1;

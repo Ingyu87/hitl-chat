@@ -4,7 +4,7 @@ import type { SessionConfig, StudentWorkspace } from "@/lib/types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const AI_ASSIST_LIMIT = 30;
+const AI_ASSIST_LIMIT = 15;
 
 export const supabaseBrowser =
   supabaseUrl && supabaseAnonKey
@@ -87,19 +87,42 @@ export async function signOutTeacher() {
 }
 
 export async function loadTeacherData(user: User) {
-  if (!supabaseBrowser) return { session: DEFAULT_SESSION, students: [] };
+  if (!supabaseBrowser) return { projects: [DEFAULT_SESSION], activeProjectId: DEFAULT_SESSION.id, session: DEFAULT_SESSION, students: [], projectStudents: [] };
 
-  const { data: sessionRows, error: sessionError } = await supabaseBrowser
+  const projects = await loadTeacherProjects(user);
+  const session = projects[0] ?? createEmptySession();
+  const students = projects[0] ? await loadStudentsForSession(session.id) : [];
+  const projectStudents = projects.length > 0 ? await loadStudentsForTeacher(user.id) : [];
+
+  return { projects: projects.length > 0 ? projects : [session], activeProjectId: session.id, session, students, projectStudents };
+}
+
+export async function loadTeacherProjects(user: User) {
+  if (!supabaseBrowser) return [DEFAULT_SESSION];
+
+  const { data, error } = await supabaseBrowser
     .from("sessions")
     .select("*")
     .eq("teacher_id", user.id)
-    .order("updated_at", { ascending: false })
-    .limit(1);
+    .order("updated_at", { ascending: false });
 
-  if (sessionError) throw sessionError;
+  if (error) throw error;
+  return (data ?? []).map((row) => rowToSession(row as SessionRow));
+}
 
-  const session = sessionRows?.[0] ? rowToSession(sessionRows[0] as SessionRow) : createEmptySession();
-  const students = sessionRows?.[0] ? await loadStudentsForTeacher(user.id) : [];
+export async function loadProjectData(projectId: string) {
+  if (!supabaseBrowser) return { session: DEFAULT_SESSION, students: [] };
+
+  const { data, error } = await supabaseBrowser
+    .from("sessions")
+    .select("*")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const session = data ? rowToSession(data as SessionRow) : createEmptySession();
+  const students = data ? await loadStudentsForSession(session.id) : [];
 
   return { session, students };
 }
@@ -150,8 +173,26 @@ export async function saveTeacherSession(session: SessionConfig, user: User) {
 
 export async function deleteStudentRow(studentId: string) {
   if (!supabaseBrowser) return;
-  const { error } = await supabaseBrowser.from("students").delete().eq("id", studentId);
-  if (error) throw error;
+  const { data } = await supabaseBrowser.auth.getSession();
+  const token = data.session?.access_token;
+
+  if (!token) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  const response = await fetch("/api/student/delete", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ studentId })
+  });
+
+  if (!response.ok) {
+    const result = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(result?.error ?? "학생 데이터를 삭제하지 못했습니다.");
+  }
 }
 
 export async function clearStudentRows(sessionId: string) {
@@ -160,7 +201,7 @@ export async function clearStudentRows(sessionId: string) {
   if (error) throw error;
 }
 
-export async function clearStudentRowsForTeacher(teacherId: string) {
+export async function clearStudentRowsForTeacher(teacherId: string, sessionId?: string) {
   if (!supabaseBrowser) return;
   const { data } = await supabaseBrowser.auth.getSession();
   const token = data.session?.access_token;
@@ -175,7 +216,7 @@ export async function clearStudentRowsForTeacher(teacherId: string) {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ teacherId })
+    body: JSON.stringify({ teacherId, sessionId })
   });
 
   if (!response.ok) {
