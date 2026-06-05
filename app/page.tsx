@@ -28,7 +28,7 @@ import { getInitialAssistantMessage } from "@/lib/flow";
 import { limitPromptLength } from "@/lib/prompt-builder";
 import { buildDefaultQuestionFlow, getChoicesForStage, getQuestionIndex, getQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
 import { clearStudentRows, clearStudentRowsForTeacher, createEmptySession, deleteProjectRow, deleteStudentRow, getCurrentTeacher, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
-import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
+import type { AiAssistLog, ChatMessage, PromptRecord, QuestionChoice, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
 type TeacherView = "teacher-settings" | "monitoring";
@@ -1411,6 +1411,52 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
     }));
   }
 
+  function updateChoice(stage: Stage, choiceIndex: number, field: keyof QuestionChoice, value: string) {
+    setDraft((current) => ({
+      ...current,
+      lessonDesigned: true,
+      questionFlow: current.questionFlow.map((item) => {
+        if (item.stage !== stage) return item;
+        const choices = [...(item.choices ?? [])];
+        choices[choiceIndex] = {
+          ...choices[choiceIndex],
+          [field]: value
+        };
+        return { ...item, choices };
+      })
+    }));
+  }
+
+  function addChoice(stage: Stage) {
+    setDraft((current) => ({
+      ...current,
+      lessonDesigned: true,
+      questionFlow: current.questionFlow.map((item) => {
+        if (item.stage !== stage) return item;
+        const nextNumber = (item.choices?.length ?? 0) + 1;
+        return {
+          ...item,
+          choices: [
+            ...(item.choices ?? []),
+            {
+              label: `선택지 ${nextNumber}`,
+              value: "",
+              description: ""
+            }
+          ]
+        };
+      })
+    }));
+  }
+
+  function deleteChoice(stage: Stage, choiceIndex: number) {
+    setDraft((current) => ({
+      ...current,
+      lessonDesigned: true,
+      questionFlow: current.questionFlow.map((item) => (item.stage === stage ? { ...item, choices: (item.choices ?? []).filter((_, index) => index !== choiceIndex) } : item))
+    }));
+  }
+
   function deleteQuestion(stage: Stage) {
     setDraft((current) => ({ ...current, questionFlow: current.questionFlow.filter((item) => item.stage !== stage) }));
   }
@@ -1578,6 +1624,38 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
                         </span>
                       </div>
                       <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-3 font-semibold text-ink" value={item.question} onChange={(event) => updateQuestion(item.stage, event.target.value)} />
+                      <div className="rounded-[8px] border border-line bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-black text-ink">학생 선택지</p>
+                            <p className="mt-1 text-xs font-bold leading-5 text-muted">학생 화면에 빠른 선택 버튼으로 표시됩니다. 값은 학생 답변으로 전송되는 문장입니다.</p>
+                          </div>
+                          <SecondaryButton type="button" className="px-3 py-2" onClick={() => addChoice(item.stage)} icon={<Plus size={14} />}>
+                            선택지 추가
+                          </SecondaryButton>
+                        </div>
+                        {(item.choices ?? []).length === 0 ? (
+                          <p className="mt-3 rounded-[8px] bg-surface px-3 py-2 text-xs font-bold text-muted">선택지가 없으면 학생은 직접 입력만 합니다.</p>
+                        ) : (
+                          <div className="mt-3 grid gap-3">
+                            {(item.choices ?? []).map((choice, choiceIndex) => (
+                              <div key={`${item.stage}-choice-${choiceIndex}`} className="grid gap-2 rounded-[8px] bg-surface p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-black text-muted">선택지 {choiceIndex + 1}</span>
+                                  <button type="button" className="text-danger" onClick={() => deleteChoice(item.stage, choiceIndex)} title="선택지 삭제">
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                                <div className="grid gap-2 md:grid-cols-[0.75fr_1.25fr]">
+                                  <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.label} onChange={(event) => updateChoice(item.stage, choiceIndex, "label", event.target.value)} placeholder="버튼 이름" />
+                                  <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.value} onChange={(event) => updateChoice(item.stage, choiceIndex, "value", event.target.value)} placeholder="학생 답변으로 들어갈 문장" />
+                                </div>
+                                <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.description ?? ""} onChange={(event) => updateChoice(item.stage, choiceIndex, "description", event.target.value)} placeholder="설명 또는 힌트" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs font-bold leading-5 text-muted">챗봇에게 전달되는 흐름 지시: {previewQuestion(item.question, currentDraft())}</p>
                     </div>
                   ))}
