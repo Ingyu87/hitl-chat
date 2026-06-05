@@ -1665,7 +1665,7 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
                           </div>
                         )}
                       </div>
-                      <p className="text-xs font-bold leading-5 text-muted">챗봇에게 전달되는 흐름 지시: {previewQuestion(item.question, currentDraft())}</p>
+                      <p className="text-xs font-bold leading-5 text-muted">학생에게 보일 질문 미리보기: {previewQuestion(item.question, currentDraft())}</p>
                     </div>
                   ))}
                 </div>
