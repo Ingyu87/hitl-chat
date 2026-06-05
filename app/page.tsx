@@ -1627,11 +1627,11 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
                       <div className="rounded-[8px] border border-line bg-white p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <p className="text-sm font-black text-ink">학생 선택지</p>
-                            <p className="mt-1 text-xs font-bold leading-5 text-muted">학생 화면에 빠른 선택 버튼으로 표시됩니다. 값은 학생 답변으로 전송되는 문장입니다.</p>
+                            <p className="text-sm font-black text-ink">학생이 고를 예시 답변</p>
+                            <p className="mt-1 text-xs font-bold leading-5 text-muted">학생에게 버튼으로 보여줄 예시 답변을 만듭니다. 학생은 이 버튼을 누르거나 직접 입력할 수 있습니다.</p>
                           </div>
                           <SecondaryButton type="button" className="px-3 py-2" onClick={() => addChoice(item.stage)} icon={<Plus size={14} />}>
-                            선택지 추가
+                            예시 답변 추가
                           </SecondaryButton>
                         </div>
                         {(item.choices ?? []).length === 0 ? (
@@ -1647,10 +1647,19 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
                                   </button>
                                 </div>
                                 <div className="grid gap-2 md:grid-cols-[0.75fr_1.25fr]">
-                                  <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.label} onChange={(event) => updateChoice(item.stage, choiceIndex, "label", event.target.value)} placeholder="버튼 이름" />
-                                  <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.value} onChange={(event) => updateChoice(item.stage, choiceIndex, "value", event.target.value)} placeholder="학생 답변으로 들어갈 문장" />
+                                  <label className="grid gap-1">
+                                    <span className="text-xs font-black text-muted">학생에게 보이는 버튼 글자</span>
+                                    <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.label} onChange={(event) => updateChoice(item.stage, choiceIndex, "label", event.target.value)} placeholder="예: 갈등 포착" />
+                                  </label>
+                                  <label className="grid gap-1">
+                                    <span className="text-xs font-black text-muted">버튼을 누르면 전송될 답변</span>
+                                    <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.value} onChange={(event) => updateChoice(item.stage, choiceIndex, "value", event.target.value)} placeholder="예: 가상현실 속 문제 상황이 드러나는 장면을 그리고 싶어요." />
+                                  </label>
                                 </div>
-                                <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.description ?? ""} onChange={(event) => updateChoice(item.stage, choiceIndex, "description", event.target.value)} placeholder="설명 또는 힌트" />
+                                <label className="grid gap-1">
+                                  <span className="text-xs font-black text-muted">버튼 아래에 보일 짧은 설명</span>
+                                  <input className="focus-ring rounded-[8px] border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" value={choice.description ?? ""} onChange={(event) => updateChoice(item.stage, choiceIndex, "description", event.target.value)} placeholder="예: 주제의 핵심 문제가 보이는 장면" />
+                                </label>
                               </div>
                             ))}
                           </div>
