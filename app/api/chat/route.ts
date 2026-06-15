@@ -166,6 +166,9 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
       "Classify sexual/nudity requests as sexual even if phrased as an image idea.",
       "off_topic: The answer is coherent but clearly unrelated to the lesson topic or current question.",
       "meaningless: The answer is random text, empty, repeated characters, or a non-answer regardless of topic.",
+      "A short Korean noun phrase can be safe when it directly answers the current question.",
+      "For a background/place question, answers like 언덕, 바다, 교실, 도시, 숲 are safe.",
+      "For a style/mood question, answers like 픽셀 아트, 수채화, 밝게, 포스터풍 are safe.",
       "Every reason and studentMessage value must be written in Korean.",
       "",
       `Lesson topic: ${body.config.topic}`,
@@ -241,7 +244,7 @@ function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage):
     };
   }
 
-  if (normalized.length < 5) {
+  if (normalized.length < 5 && !hasAiApiKey()) {
     return {
       alertType: "meaningless",
       reason: "학생 답변이 짧아 자세한 문장이 필요합니다.",
@@ -274,6 +277,8 @@ function isValidShortAnswerForQuestion(input: string, config: SessionConfig, sta
   if (isStyleQuestion(question) && isStyleAnswer(text)) return true;
   if (isCompositionQuestion(question) && isCompositionAnswer(text)) return true;
   if (isMoodQuestion(question) && isMoodAnswer(text)) return true;
+  if (isPlaceQuestion(question) && isPlaceAnswer(text)) return true;
+  if (isSubjectQuestion(question) && isSubjectAnswer(text)) return true;
 
   return false;
 }
@@ -300,6 +305,22 @@ function isMoodQuestion(question: string) {
 
 function isMoodAnswer(input: string) {
   return /밝|어둡|따뜻|차갑|희망|평화|긴장|즐거|무서|차분|신나|깨끗|선명|부드럽/.test(input);
+}
+
+function isPlaceQuestion(question: string) {
+  return /배경|장소|어디|공간|하늘|초원|도시|교실|마을|바다|산|언덕/.test(question);
+}
+
+function isPlaceAnswer(input: string) {
+  return /언덕|산|초원|숲|바다|강|호수|하늘|구름|도시|마을|거리|학교|교실|운동장|복도|집|공원|놀이터|시장|우주|사막|섬|해변|바닷가|들판|농장|정원|무대|박물관|도서관|체육관|실내|실외/.test(input);
+}
+
+function isSubjectQuestion(question: string) {
+  return /누가|무엇|대상|중심|피사체|사람|동물|물건|장치|요소/.test(question);
+}
+
+function isSubjectAnswer(input: string) {
+  return /학생|친구|선생님|사람|아이|어른|동물|고양이|강아지|물고기|거북|새|나무|꽃|로봇|AI|태양|패널|풍력|발전기|자동차|자전거|배|쓰레기|플라스틱|칠판|표지판/.test(input);
 }
 
 function isAnswerRequest(normalized: string) {
