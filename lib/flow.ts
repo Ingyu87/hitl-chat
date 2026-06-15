@@ -38,7 +38,7 @@ export function getNextFlow(args: {
       const draftPrompt = revisePrompt(latestPrompt, studentInput);
       return {
         nextStage: "revise",
-        assistantMessage: `수정 의견을 반영해서 프롬프트를 다시 만들었어요.\n\n${draftPrompt}\n\n읽어보고 더 고칠 점을 말해 주세요. 괜찮으면 "이대로 확정"이라고 입력해 주세요.`,
+        assistantMessage: `말해 준 내용을 장면 묘사로 정리해서 프롬프트를 다시 만들었어요.\n\n${draftPrompt}\n\n읽어보고 더 고칠 점을 말해 주세요. 괜찮으면 "이대로 확정"이라고 입력해 주세요.`,
         draftPrompt,
         shouldCreatePrompt: true,
         promptSource: "student_revision",
