@@ -58,7 +58,7 @@ export function checkSafety(input: string): { isSafe: boolean; alertType?: Safet
     return {
       isSafe: false,
       alertType: "sexual",
-      message: "\uc131\uc801\uc778 \ub0b4\uc6a9\uc740 \uc774 \uc218\uc5c5 \ud65c\ub3d9\uc5d0\uc11c \uc0ac\uc6a9\ud560 \uc218 \uc5c6\uc5b4\uc694. \uc218\uc5c5 \uc8fc\uc81c\uc5d0 \ub9de\ub294 \uc7a5\uba74\uc73c\ub85c \ub2e4\uc2dc \ub9d0\ud574 \uc8fc\uc138\uc694."
+      message: "음란하거나 성적인 표현은 이 수업 활동에서 사용할 수 없어요. 오늘 수업 주제에 맞는 안전한 장면으로 다시 적어 주세요."
     };
   }
 
@@ -66,7 +66,7 @@ export function checkSafety(input: string): { isSafe: boolean; alertType?: Safet
     return {
       isSafe: false,
       alertType: "abusive",
-      message: "\ud3ed\uc5b8, \ubaa8\uc695, \ud610\uc624 \ud45c\ud604\uc740 \uc0ac\uc6a9\ud560 \uc218 \uc5c6\uc5b4\uc694. \uc0c1\ub300\ub97c \uc874\uc911\ud558\ub294 \ud45c\ud604\uc73c\ub85c \ub2e4\uc2dc \ub9d0\ud574 \uc8fc\uc138\uc694."
+      message: "폭언, 모욕, 혐오 표현은 사용할 수 없어요. 사람을 존중하는 표현으로 바꾸어 다시 적어 주세요."
     };
   }
 
@@ -74,7 +74,7 @@ export function checkSafety(input: string): { isSafe: boolean; alertType?: Safet
     return {
       isSafe: false,
       alertType: "profanity",
-      message: "\uc695\uc124\uc774\ub098 \ube44\uc18d\uc5b4\ub294 \uc218\uc5c5 \ub300\ud654\uc5d0 \uc0ac\uc6a9\ud560 \uc218 \uc5c6\uc5b4\uc694. \ud45c\ud604\uc744 \ubc14\uafd4\uc11c \ub2e4\uc2dc \ub9d0\ud574 \uc8fc\uc138\uc694."
+      message: "욕설이나 비속어는 수업 대화에 사용할 수 없어요. 같은 생각이라도 바른 말로 바꾸어 다시 적어 주세요."
     };
   }
 

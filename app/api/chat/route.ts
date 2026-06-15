@@ -180,8 +180,8 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
 
     return {
       alertType: result.category,
-      reason: result.reason || defaultReason(result.category),
-      studentMessage: result.studentMessage || defaultStudentMessage(result.category, body.config, body.currentStage),
+      reason: result.reason || fallbackReasonText(result.category),
+      studentMessage: result.studentMessage || fallbackStudentMessage(result.category, body.config, body.currentStage),
       isSafetyAlert: !["meaningless", "off_topic"].includes(result.category)
     };
   } catch {
@@ -216,11 +216,20 @@ function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage):
   if (isChoiceAnswer(input, config, stage)) return null;
   if (isValidVisualScene(input, config)) return null;
 
+  if (isAnswerRequest(normalized)) {
+    return {
+      alertType: "meaningless",
+      reason: "학생이 자기 생각 대신 정답이나 완성본을 요구했습니다.",
+      studentMessage: answerRequestMessage(config, stage),
+      isSafetyAlert: false
+    };
+  }
+
   if (isClearlyMeaningless(normalized)) {
     return {
       alertType: "meaningless",
       reason: "학생 답변이 프롬프트 재료로 사용하기에 너무 모호합니다.",
-      studentMessage: defaultStudentMessage("meaningless", config, stage),
+      studentMessage: fallbackStudentMessage("meaningless", config, stage),
       isSafetyAlert: false
     };
   }
@@ -229,7 +238,7 @@ function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage):
     return {
       alertType: "meaningless",
       reason: "학생 답변이 짧아 자세한 문장이 필요합니다.",
-      studentMessage: defaultStudentMessage("meaningless", config, stage),
+      studentMessage: fallbackStudentMessage("meaningless", config, stage),
       isSafetyAlert: false
     };
   }
@@ -248,6 +257,33 @@ function isChoiceAnswer(input: string, config: SessionConfig, stage: Stage) {
 
 function normalizeForCompare(input: string) {
   return input.trim().replace(/\s+/g, "").toLowerCase();
+}
+
+function isAnswerRequest(normalized: string) {
+  const answerRequestTerms = [
+    "정답알려줘",
+    "답알려줘",
+    "답변해줘",
+    "대답해줘",
+    "대신써줘",
+    "대신해줘",
+    "너가해",
+    "니가해",
+    "네가해",
+    "알아서해",
+    "만들어줘",
+    "작성해줘",
+    "써줘",
+    "뭐라고써",
+    "뭐라고적어",
+    "모범답안",
+    "정답"
+  ];
+  return answerRequestTerms.some((term) => normalized.includes(term));
+}
+
+function answerRequestMessage(config: SessionConfig, stage: Stage) {
+  return `정답을 바로 알려 달라고 하기보다, 지금 떠오르는 생각을 네 말로 적어 주세요. 한 문장이어도 괜찮아요. 그 답변을 바탕으로 같이 프롬프트를 만들어 갈게요.\n\n${getQuestionForStage(config, stage)}`;
 }
 
 function isClearlyMeaningless(normalized: string) {
@@ -287,6 +323,26 @@ function isValidVisualScene(input: string, config: SessionConfig) {
   const hasSceneWord = /바다|강|하늘|교실|마을|도시|사람|학생|동물|물고기|상황|모습|그림|이미지|빛|분위기|쓰레기|오염|위험|플라스틱|자연|죽은|미래|해결|초원|음식|파티|스타일|픽셀|수채화|사진|보여/.test(text);
   const hasActionOrDescriptor = /하고|먹|즐기|보여|움직|밝|어둡|더럽|깨끗|위험|멋진|슬픈|희망|평화|신나|역동|해결|그리/.test(text);
   return hasSceneWord && (hasActionOrDescriptor || hasTopicWord || text.length >= 12);
+}
+
+function fallbackReasonText(category: AiModeration["category"]) {
+  if (category === "profanity") return "욕설 또는 비속어가 포함되어 있습니다.";
+  if (category === "sexual") return "음란하거나 성적인 표현이 포함되어 있습니다.";
+  if (category === "abusive") return "폭언, 모욕, 혐오 표현이 포함되어 있습니다.";
+  if (category === "meaningless") return "답변이 아직 구체적이지 않습니다.";
+  if (category === "off_topic") return "수업 주제나 현재 질문과 관련이 약합니다.";
+  return "수업 진행에 맞게 다시 확인이 필요한 답변입니다.";
+}
+
+function fallbackStudentMessage(category: Exclude<AiModeration["category"], "safe">, config: SessionConfig, stage: Stage) {
+  if (category === "profanity") return "욕설이나 비속어는 수업 대화에 사용할 수 없어요. 같은 생각이라도 바른 말로 바꾸어 다시 적어 주세요.";
+  if (category === "sexual") return "음란하거나 성적인 표현은 이 수업 활동에서 사용할 수 없어요. 오늘 수업 주제에 맞는 안전한 장면으로 다시 적어 주세요.";
+  if (category === "abusive") return "폭언, 모욕, 혐오 표현은 사용할 수 없어요. 사람을 존중하는 표현으로 바꾸어 다시 적어 주세요.";
+  if (category === "off_topic") {
+    return `지금 답변은 수업 주제와 조금 멀어 보여요. "${config.topic}"와 연결되는 장면이나 생각으로 다시 적어 주세요.\n\n${getQuestionForStage(config, stage)}`;
+  }
+
+  return `아무 말이나 쓰기보다, 지금 질문에 맞춰 떠오르는 장면이나 생각을 네 말로 적어 주세요. 짧아도 괜찮아요.\n\n${getQuestionForStage(config, stage)}`;
 }
 
 function defaultReason(category: AiModeration["category"]) {

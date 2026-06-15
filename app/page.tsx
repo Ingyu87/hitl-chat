@@ -278,7 +278,7 @@ export default function AppPage() {
 
     const pollTimer = window.setInterval(async () => {
       const students = await loadStudentsForSession(data.session.id);
-      setData((current) => replaceProjectStudents({ ...current, students }, current.session.id, students));
+      setData((current) => replaceProjectStudents(current, current.session.id, students));
     }, 3000);
 
     return () => window.clearInterval(pollTimer);
@@ -466,7 +466,7 @@ export default function AppPage() {
         await clearStudentRows(data.session.id);
       }
       const remainingStudents = teacherUser ? await loadStudentsForSession(data.session.id) : [];
-      setData((current) => replaceProjectStudents(current, current.session.id, remainingStudents));
+      setData((current) => replaceProjectStudents(current, current.session.id, remainingStudents, { preserveLocal: false }));
       setUi((current) => ({ ...current, activeStudentId: null }));
       if (remainingStudents.length > 0) {
         window.alert(`삭제 요청 후에도 ${remainingStudents.length}명의 기록이 남아 있습니다. 잠시 뒤 다시 시도해 주세요.`);
@@ -621,13 +621,33 @@ function upsertProject(projects: SessionConfig[], session: SessionConfig) {
   return nextProjects.sort((left, right) => parseTime(right.updatedAt) - parseTime(left.updatedAt));
 }
 
-function replaceProjectStudents(data: AppData, sessionId: string, students: StudentWorkspace[]): AppData {
+function replaceProjectStudents(data: AppData, sessionId: string, students: StudentWorkspace[], options: { preserveLocal?: boolean } = {}): AppData {
+  const nextStudents = options.preserveLocal === false ? students : mergeLocalStudentProgress(data.students, students);
   const otherStudents = data.projectStudents.filter((student) => student.sessionId !== sessionId);
   return {
     ...data,
-    students,
-    projectStudents: [...otherStudents, ...students]
+    students: nextStudents,
+    projectStudents: [...otherStudents, ...nextStudents]
   };
+}
+
+function mergeLocalStudentProgress(localStudents: StudentWorkspace[], serverStudents: StudentWorkspace[]) {
+  return serverStudents.map((serverStudent) => {
+    const localStudent = localStudents.find((student) => student.id === serverStudent.id);
+    if (!localStudent) return serverStudent;
+    return isStudentProgressNewer(localStudent, serverStudent) ? { ...localStudent, lessonTopic: serverStudent.lessonTopic ?? localStudent.lessonTopic } : serverStudent;
+  });
+}
+
+function isStudentProgressNewer(left: StudentWorkspace, right: StudentWorkspace) {
+  const leftTime = parseTime(left.lastActiveAt);
+  const rightTime = parseTime(right.lastActiveAt);
+  if (leftTime !== rightTime) return leftTime > rightTime;
+  return getStudentProgressWeight(left) > getStudentProgressWeight(right);
+}
+
+function getStudentProgressWeight(student: StudentWorkspace) {
+  return student.messages.length + student.prompts.length * 3 + student.safetyAlerts.length + student.aiLogs.length;
 }
 
 function questionFlowMatchesTopic(session: SessionConfig) {
@@ -657,6 +677,24 @@ function getTeacherUnlockCode(session: SessionConfig) {
 
 function isLockingAlert(alertType: SafetyAlert["alertType"]) {
   return ["paste_attempt", "profanity", "sexual", "abusive"].includes(alertType);
+}
+
+function lockMessage() {
+  return "안전 확인이 필요한 입력이 3회 누적되어 활동이 잠겼습니다. 선생님께 말씀드리고, 선생님이 해제 코드를 입력하면 다시 이어갈 수 있어요.";
+}
+
+function pasteWarningMessage() {
+  return "복사해서 붙여넣기보다는 지금 질문을 읽고 네 생각을 직접 적어 주세요. 짧아도 괜찮아요. 네 말로 쓴 답변을 바탕으로 프롬프트를 만들어 볼게요.";
+}
+
+function safetyAlertStudentMessage(alertType: SafetyAlert["alertType"], session: SessionConfig, stage: Stage) {
+  if (alertType === "paste_attempt") return pasteWarningMessage();
+  if (alertType === "sexual") return "음란하거나 성적인 표현은 이 수업 활동에서 사용할 수 없어요. 오늘 수업 주제에 맞는 안전한 장면으로 다시 적어 주세요.";
+  if (alertType === "abusive") return "폭언, 모욕, 혐오 표현은 사용할 수 없어요. 사람을 존중하는 표현으로 바꾸어 다시 적어 주세요.";
+  if (alertType === "profanity") return "욕설이나 비속어는 수업 대화에 사용할 수 없어요. 같은 생각이라도 바른 말로 바꾸어 다시 적어 주세요.";
+  if (alertType === "off_topic") return `지금 답변은 수업 주제와 조금 멀어 보여요. "${session.topic}"와 연결되는 장면이나 생각으로 다시 적어 주세요.`;
+  const currentQuestion = getQuestionFlow(session).find((item) => item.stage === stage)?.question ?? "";
+  return `아무 말이나 쓰기보다, 지금 질문에 맞춰 떠오르는 장면이나 생각을 네 말로 적어 주세요. ${previewQuestion(currentQuestion, session)}`;
 }
 
 function getLastTeacherUnlockTime(student: StudentWorkspace) {
@@ -1088,6 +1126,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   const currentChoices = getChoicesForStage(session, student.currentStage);
   const activeMessages = getActiveMessages(student.messages);
   const aiUsedCount = student.aiLogs.filter((log) => log.used).length;
+  const latestActiveSafetyAlert = activeSafetyAlerts.at(-1);
   const aiLimit = Math.max(0, session.aiCallsPerStudentLimit ?? 0);
   const aiRemaining = Math.max(0, aiLimit - aiUsedCount);
   const aiCounterText = !session.aiEnabled
@@ -1120,9 +1159,9 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
       createdAt: now
     };
     const nextAlerts = [...student.safetyAlerts, alert];
-    const nextMessages = [...student.messages];
+    const nextMessages = [...student.messages, createAssistantMessage(pasteWarningMessage(), student.currentStage)];
     if (getActiveSafetyAlerts({ ...student, safetyAlerts: nextAlerts }).length >= 3) {
-      nextMessages.push(createAssistantMessage("문제 행동 경고가 3회 누적되어 활동이 잠겼습니다. 담임선생님께 보고하고, 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.", student.currentStage));
+      nextMessages.push(createAssistantMessage(lockMessage(), student.currentStage));
     }
     onChange({ ...student, messages: nextMessages, safetyAlerts: nextAlerts, lastActiveAt: now });
   }
@@ -1199,7 +1238,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         nextMessages.push(createAssistantMessage(result.message, student.currentStage));
         const nextAlerts = [...student.safetyAlerts, alert];
         if (getActiveSafetyAlerts({ ...student, safetyAlerts: nextAlerts }).length >= 3) {
-          nextMessages.push(createAssistantMessage("문제 행동 경고가 3회 누적되어 활동이 잠겼습니다. 담임선생님께 보고하고, 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.", student.currentStage));
+          nextMessages.push(createAssistantMessage(lockMessage(), student.currentStage));
         }
         onChange({
           ...student,
@@ -1221,7 +1260,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
           createdAt: now
         });
         if (getActiveSafetyAlerts({ ...student, safetyAlerts: nextSafetyAlerts }).length >= 3) {
-          nextMessages.push(createAssistantMessage("문제 행동 경고가 3회 누적되어 활동이 잠겼습니다. 담임선생님께 보고하고, 선생님이 해제 코드를 입력해야 다시 진행할 수 있습니다.", student.currentStage));
+          nextMessages.push(createAssistantMessage(lockMessage(), student.currentStage));
         }
       }
 
@@ -1291,6 +1330,12 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             <div className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">
               안전 경고 {activeSafetyAlerts.length}건
             </div>
+            {latestActiveSafetyAlert && (
+              <div className="mt-3 rounded-[8px] bg-surface px-3 py-2 text-sm font-semibold leading-6 text-ink">
+                <strong className="block text-danger">마지막 안내</strong>
+                {safetyAlertStudentMessage(latestActiveSafetyAlert.alertType, session, student.currentStage)}
+              </div>
+            )}
             <TextField label="교사 해제 코드" value={unlockCode} onChange={setUnlockCode} placeholder="숫자 4자리" type="password" />
             {unlockError && <p className="mt-3 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{unlockError}</p>}
             <PrimaryButton type="submit" className="mt-4 w-full justify-center" icon={<ShieldCheck size={18} />}>

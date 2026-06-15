@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
   const { data: existingRow, error: existingError } = await supabase
     .from("students")
-    .select("id, session_id, name, access_code")
+    .select("id, session_id, name, access_code, last_active_at")
     .eq("id", student.id)
     .maybeSingle();
 
@@ -67,6 +67,10 @@ export async function POST(request: Request) {
   const validation = validateStudentPayload(student, getAllowedStages(sessionRow.question_flow));
   if (!validation.ok) {
     return Response.json({ error: validation.error }, { status: 400 });
+  }
+
+  if (isServerRecordNewer(existingRow.last_active_at as string | undefined, student.lastActiveAt)) {
+    return Response.json({ skipped: true });
   }
 
   const { data, error } = await supabase
@@ -99,6 +103,12 @@ export async function POST(request: Request) {
 
 function normalizeCode(value: string) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function isServerRecordNewer(serverLastActiveAt: string | undefined, incomingLastActiveAt: string) {
+  const serverTime = Date.parse(serverLastActiveAt ?? "");
+  const incomingTime = Date.parse(incomingLastActiveAt);
+  return Number.isFinite(serverTime) && Number.isFinite(incomingTime) && serverTime > incomingTime;
 }
 
 function getAllowedStages(questionFlow: unknown) {

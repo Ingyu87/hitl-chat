@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>생각잇기 프롬프트 영상 전환 슬라이드</title>
+    <style>
+      :root {
+        --ink: #0d1c2e;
+        --muted: #536276;
+        --surface: #f8f9ff;
+        --panel: #ffffff;
+        --line: #d8e2f3;
+        --primary: #006d36;
+        --primary-soft: #dffbe8;
+        --secondary: #00668a;
+        --secondary-soft: #dff4ff;
+        --warning: #735c00;
+        --warning-soft: #fff3bd;
+        --shadow: 0 16px 50px rgba(13, 28, 46, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgba(223, 251, 232, 0.75), transparent 28%),
+          linear-gradient(215deg, rgba(223, 244, 255, 0.95), transparent 34%),
+          var(--surface);
+        color: var(--ink);
+        font-family: Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        overflow: hidden;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .deck {
+        height: 100dvh;
+        width: 100vw;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .slides {
+        display: flex;
+        height: 100%;
+        transition: transform 420ms ease;
+        width: 500vw;
+      }
+
+      .slide {
+        display: grid;
+        flex: 0 0 100vw;
+        min-height: 100dvh;
+        place-items: center;
+        padding: 5.2vh 5.5vw;
+      }
+
+      .frame {
+        aspect-ratio: 16 / 9;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(216, 226, 243, 0.92);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        max-height: 88dvh;
+        max-width: min(92vw, 1500px);
+        overflow: hidden;
+        position: relative;
+        width: 100%;
+      }
+
+      .topbar {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        padding: 24px 32px;
+      }
+
+      .brand {
+        align-items: center;
+        display: flex;
+        gap: 14px;
+      }
+
+      .brand-mark {
+        align-items: center;
+        background: var(--primary);
+        border-radius: 8px;
+        color: #fff;
+        display: grid;
+        font-size: 26px;
+        font-weight: 1000;
+        height: 48px;
+        justify-items: center;
+        line-height: 1;
+        width: 48px;
+      }
+
+      .brand-title {
+        display: block;
+        font-size: clamp(18px, 1.7vw, 28px);
+        font-weight: 1000;
+      }
+
+      .brand-subtitle {
+        color: var(--muted);
+        display: block;
+        font-size: clamp(12px, 0.9vw, 16px);
+        font-weight: 800;
+        margin-top: 4px;
+      }
+
+      .step {
+        background: var(--primary-soft);
+        border: 1px solid rgba(0, 109, 54, 0.18);
+        border-radius: 8px;
+        color: var(--primary);
+        font-size: clamp(12px, 0.9vw, 15px);
+        font-weight: 1000;
+        padding: 9px 12px;
+      }
+
+      .content {
+        align-content: center;
+        display: grid;
+        gap: 28px;
+        padding: 32px 6.5vw;
+      }
+
+      .eyebrow {
+        color: var(--primary);
+        font-size: clamp(17px, 1.25vw, 24px);
+        font-weight: 1000;
+      }
+
+      h1 {
+        font-size: clamp(52px, 5.4vw, 88px);
+        letter-spacing: 0;
+        line-height: 1.08;
+        margin: 0;
+        max-width: 1050px;
+      }
+
+      .lead {
+        color: var(--muted);
+        font-size: clamp(24px, 2vw, 36px);
+        font-weight: 900;
+        line-height: 1.34;
+        margin: 0;
+        max-width: 1060px;
+      }
+
+      .quote-list {
+        display: grid;
+        gap: 18px;
+        max-width: 900px;
+      }
+
+      .quote {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 8px 26px rgba(13, 28, 46, 0.06);
+        color: var(--muted);
+        font-size: clamp(30px, 2.8vw, 48px);
+        font-weight: 1000;
+        padding: 22px 28px;
+      }
+
+      .hitl-grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        max-width: 1160px;
+      }
+
+      .hitl-card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 8px 26px rgba(13, 28, 46, 0.06);
+        display: grid;
+        gap: 16px;
+        min-height: 240px;
+        padding: 28px;
+      }
+
+      .hitl-card strong {
+        color: var(--ink);
+        font-size: clamp(24px, 2.1vw, 36px);
+        font-weight: 1000;
+      }
+
+      .hitl-card span {
+        color: var(--muted);
+        font-size: clamp(17px, 1.35vw, 24px);
+        font-weight: 850;
+        line-height: 1.45;
+      }
+
+      .teacher {
+        border-top: 7px solid var(--primary);
+      }
+
+      .student {
+        border-top: 7px solid var(--secondary);
+      }
+
+      .ai {
+        border-top: 7px solid var(--warning);
+      }
+
+      .flow {
+        align-items: center;
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 1fr auto 1fr auto 1fr;
+        max-width: 1160px;
+      }
+
+      .flow-node {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 8px 26px rgba(13, 28, 46, 0.06);
+        min-height: 150px;
+        padding: 24px;
+      }
+
+      .flow-node strong {
+        display: block;
+        font-size: clamp(23px, 1.9vw, 34px);
+        font-weight: 1000;
+      }
+
+      .flow-node span {
+        color: var(--muted);
+        display: block;
+        font-size: clamp(15px, 1.15vw, 20px);
+        font-weight: 850;
+        line-height: 1.45;
+        margin-top: 10px;
+      }
+
+      .arrow {
+        color: var(--primary);
+        font-size: clamp(28px, 2.4vw, 44px);
+        font-weight: 1000;
+      }
+
+      .footer {
+        align-items: center;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        display: flex;
+        font-size: clamp(12px, 0.9vw, 15px);
+        font-weight: 800;
+        justify-content: space-between;
+        padding: 18px 32px;
+      }
+
+      .nav {
+        bottom: 18px;
+        display: flex;
+        gap: 8px;
+        left: 50%;
+        position: fixed;
+        transform: translateX(-50%);
+        z-index: 20;
+      }
+
+      .dot {
+        background: rgba(83, 98, 118, 0.24);
+        border: 0;
+        border-radius: 999px;
+        height: 10px;
+        padding: 0;
+        width: 34px;
+      }
+
+      .dot.active {
+        background: var(--primary);
+      }
+
+      .hint {
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+        padding: 8px 10px;
+        position: fixed;
+        right: 18px;
+        top: 18px;
+        z-index: 20;
+      }
+
+      @media (max-width: 900px) {
+        body {
+          overflow: auto;
+        }
+
+        .deck {
+          height: auto;
+          overflow: visible;
+        }
+
+        .slides {
+          display: grid;
+          transform: none !important;
+          width: 100%;
+        }
+
+        .slide {
+          min-height: 100svh;
+          padding: 16px;
+        }
+
+        .frame {
+          aspect-ratio: auto;
+          min-height: calc(100svh - 32px);
+        }
+
+        .topbar,
+        .footer {
+          padding: 16px;
+        }
+
+        .content {
+          padding: 24px;
+        }
+
+        .hitl-grid,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+
+        .arrow {
+          display: none;
+        }
+
+        .hint,
+        .nav {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck" aria-label="생각잇기 프롬프트 영상 전환 슬라이드">
+      <div class="hint">← → 키로 넘기기</div>
+      <section class="slides" id="slides">
+        <article class="slide">
+          <div class="frame">
+            <header class="topbar">
+              <div class="brand">
+                <div class="brand-mark">?</div>
+                <span>
+                  <span class="brand-title">생각잇기 프롬프트</span>
+                  <span class="brand-subtitle">학생 답변 기반 이미지 생성 프롬프트 수업 도구</span>
+                </span>
+              </div>
+              <span class="step">01 문제 제기</span>
+            </header>
+            <div class="content">
+              <div class="quote-list">
+                <div class="quote">“멋진 그림 그려줘”</div>
+                <div class="quote">“환경 포스터 만들어줘”</div>
+              </div>
+              <h1>AI에게 바로 맡기는<br />한 줄 프롬프트</h1>
+              <p class="lead">학생의 생각은 어디에 남을까?</p>
+            </div>
+            <footer class="footer">
+              <span>Problem</span>
+              <span>막연한 요청에서 수업 과정으로</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="slide">
+          <div class="frame">
+            <header class="topbar">
+              <div class="brand">
+                <div class="brand-mark">잇</div>
+                <span>
+                  <span class="brand-title">생각잇기 프롬프트</span>
+                  <span class="brand-subtitle">학생 답변 기반 이미지 생성 프롬프트 수업 도구</span>
+                </span>
+              </div>
+              <span class="step">02 작품 소개</span>
+            </header>
+            <div class="content">
+              <p class="eyebrow">학생의 말을 프롬프트로 잇는 수업 도구</p>
+              <h1>생각을 묻고,<br />답변을 모아,<br />프롬프트로 완성합니다</h1>
+              <p class="lead">AI는 대신 창작하지 않고 학생 답변을 정리하고 다듬습니다.</p>
+            </div>
+            <footer class="footer">
+              <span>Product</span>
+              <span>AI는 보조, 결정은 사람</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="slide">
+          <div class="frame">
+            <header class="topbar">
+              <div class="brand">
+                <div class="brand-mark">H</div>
+                <span>
+                  <span class="brand-title">Human-in-the-loop 구조</span>
+                  <span class="brand-subtitle">Teacher-in-the-loop + Student-in-the-loop</span>
+                </span>
+              </div>
+              <span class="step">03 HITL 구조</span>
+            </header>
+            <div class="content">
+              <h1>교사가 설계하고<br />학생이 결정하며<br />AI는 보조합니다</h1>
+              <div class="hitl-grid">
+                <div class="hitl-card teacher">
+                  <strong>Teacher-in-the-loop</strong>
+                  <span>수업 목표, 질문 흐름, 금지 요소, 안전 기준을 교사가 설계하고 검토합니다.</span>
+                </div>
+                <div class="hitl-card student">
+                  <strong>Student-in-the-loop</strong>
+                  <span>학생은 답변하고, 수정하고, 최종 프롬프트를 직접 승인합니다.</span>
+                </div>
+                <div class="hitl-card ai">
+                  <strong>AI 보조</strong>
+                  <span>질문 표현, 프롬프트 정리, 안전 점검, 교사용 분석을 보조합니다.</span>
+                </div>
+              </div>
+            </div>
+            <footer class="footer">
+              <span>Structure</span>
+              <span>수업 통제권은 교사와 학생에게 남습니다</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="slide">
+          <div class="frame">
+            <header class="topbar">
+              <div class="brand">
+                <div class="brand-mark">과</div>
+                <span>
+                  <span class="brand-title">과정이 남는 AI 활용 수업</span>
+                  <span class="brand-subtitle">완성도 · 교육적 효과 · 확장 가능성</span>
+                </span>
+              </div>
+              <span class="step">04 교육적 효과</span>
+            </header>
+            <div class="content">
+              <h1>교사 통제 + 학생 승인 + AI 보조</h1>
+              <div class="flow">
+                <div class="flow-node">
+                  <strong>수업 설계</strong>
+                  <span>교사가 목표와 조건을 정합니다.</span>
+                </div>
+                <div class="arrow">→</div>
+                <div class="flow-node">
+                  <strong>생각 구체화</strong>
+                  <span>학생이 단계별 질문에 답합니다.</span>
+                </div>
+                <div class="arrow">→</div>
+                <div class="flow-node">
+                  <strong>프롬프트 완성</strong>
+                  <span>AI가 보조하고 학생이 최종 승인합니다.</span>
+                </div>
+              </div>
+              <p class="lead">주제만 바꾸면 안전, 환경, 역사, 미술, 독서 활동으로 확장할 수 있습니다.</p>
+            </div>
+            <footer class="footer">
+              <span>Impact</span>
+              <span>과정이 보이는 생성형 AI 수업</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="slide">
+          <div class="frame">
+            <header class="topbar">
+              <div class="brand">
+                <div class="brand-mark">끝</div>
+                <span>
+                  <span class="brand-title">생각잇기 프롬프트</span>
+                  <span class="brand-subtitle">Human-in-the-loop prompt builder</span>
+                </span>
+              </div>
+              <span class="step">05 마무리</span>
+            </header>
+            <div class="content">
+              <p class="eyebrow">AI가 답을 대신 만드는 도구가 아니라</p>
+              <h1>생각을 잇고,<br />프롬프트로 완성하다</h1>
+              <p class="lead">교사와 학생이 루프 안에서 AI를 통제하는 수업 도구입니다.</p>
+            </div>
+            <footer class="footer">
+              <span>Closing</span>
+              <span>© 2026 ingyu's AI world</span>
+            </footer>
+          </div>
+        </article>
+      </section>
+      <nav class="nav" aria-label="슬라이드 이동">
+        <button class="dot active" type="button" aria-label="1번 슬라이드"></button>
+        <button class="dot" type="button" aria-label="2번 슬라이드"></button>
+        <button class="dot" type="button" aria-label="3번 슬라이드"></button>
+        <button class="dot" type="button" aria-label="4번 슬라이드"></button>
+        <button class="dot" type="button" aria-label="5번 슬라이드"></button>
+      </nav>
+    </main>
+    <script>
+      const slides = document.getElementById("slides");
+      const dots = Array.from(document.querySelectorAll(".dot"));
+      let index = 0;
+
+      function render() {
+        slides.style.transform = `translateX(-${index * 100}vw)`;
+        dots.forEach((dot, dotIndex) => dot.classList.toggle("active", dotIndex === index));
+      }
+
+      function go(nextIndex) {
+        index = Math.max(0, Math.min(dots.length - 1, nextIndex));
+        render();
+      }
+
+      dots.forEach((dot, dotIndex) => {
+        dot.addEventListener("click", () => go(dotIndex));
+      });
+
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+          event.preventDefault();
+          go(index + 1);
+        }
+        if (event.key === "ArrowLeft" || event.key === "PageUp") {
+          event.preventDefault();
+          go(index - 1);
+        }
+        if (event.key === "Home") go(0);
+        if (event.key === "End") go(dots.length - 1);
+      });
+    </script>
+  </body>
+</html>
