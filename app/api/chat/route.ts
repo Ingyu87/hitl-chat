@@ -150,7 +150,7 @@ function isStudentControlCommand(input: string) {
 }
 
 async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
-  if (!hasAiApiKey() || isChoiceAnswer(body.message, body.config, body.currentStage)) return null;
+  if (!hasAiApiKey() || isChoiceAnswer(body.message, body.config, body.currentStage) || isValidShortAnswerForQuestion(body.message, body.config, body.currentStage)) return null;
 
   try {
     const currentFlow = getQuestionForStage(body.config, body.currentStage);
@@ -220,6 +220,7 @@ function createAiLog(purpose: AiAssistLog["purpose"], stage: Stage, used: boolea
 function classifyWeakAnswer(input: string, config: SessionConfig, stage: Stage): ChatWarning | null {
   const normalized = input.trim().replace(/\s/g, "").toLowerCase();
   if (isChoiceAnswer(input, config, stage)) return null;
+  if (isValidShortAnswerForQuestion(input, config, stage)) return null;
   if (isValidVisualScene(input, config)) return null;
 
   if (isAnswerRequest(normalized)) {
@@ -263,6 +264,42 @@ function isChoiceAnswer(input: string, config: SessionConfig, stage: Stage) {
 
 function normalizeForCompare(input: string) {
   return input.trim().replace(/\s+/g, "").toLowerCase();
+}
+
+function isValidShortAnswerForQuestion(input: string, config: SessionConfig, stage: Stage) {
+  const text = input.trim();
+  if (!text) return false;
+
+  const question = getQuestionForStage(config, stage);
+  if (isStyleQuestion(question) && isStyleAnswer(text)) return true;
+  if (isCompositionQuestion(question) && isCompositionAnswer(text)) return true;
+  if (isMoodQuestion(question) && isMoodAnswer(text)) return true;
+
+  return false;
+}
+
+function isStyleQuestion(question: string) {
+  return /스타일|그림체|화풍|분위기|색감|구도|시점/.test(question);
+}
+
+function isStyleAnswer(input: string) {
+  return /픽셀\s*아트|픽셀아트|수채화|만화|카툰|사진|실사|포스터|일러스트|디지털|연필|크레파스|유화|스케치|애니|3d|입체|현실적|귀엽|따뜻|밝|어둡|선명/.test(input);
+}
+
+function isCompositionQuestion(question: string) {
+  return /구도|시점|거리|화면|앞쪽|배경|중심/.test(question);
+}
+
+function isCompositionAnswer(input: string) {
+  return /가로|세로|중앙|가까이|멀리|위에서|아래에서|앞쪽|뒤쪽|배경|중심|한눈에|넓게|크게/.test(input);
+}
+
+function isMoodQuestion(question: string) {
+  return /분위기|느낌|색감|밝|어둡|따뜻|차가운/.test(question);
+}
+
+function isMoodAnswer(input: string) {
+  return /밝|어둡|따뜻|차갑|희망|평화|긴장|즐거|무서|차분|신나|깨끗|선명|부드럽/.test(input);
 }
 
 function isAnswerRequest(normalized: string) {
