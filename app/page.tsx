@@ -26,7 +26,7 @@ import type { User } from "@supabase/supabase-js";
 import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { limitPromptLength } from "@/lib/prompt-builder";
-import { buildDefaultQuestionFlow, getChoicesForStage, getQuestionIndex, getQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
+import { buildDefaultQuestionFlow, getChoicesForStage, getInitialQuestionStage, getQuestionFlow, getStudentQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
 import { clearStudentRows, clearStudentRowsForTeacher, createEmptySession, deleteProjectRow, deleteStudentRow, getCurrentTeacher, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, QuestionChoice, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
@@ -416,6 +416,7 @@ export default function AppPage() {
 
   function resetStudent(studentId: string) {
     const now = new Date().toISOString();
+    const initialStage = getInitialQuestionStage(data.session);
     let nextStudent: StudentWorkspace | null = null;
     setData((current) => ({
       ...current,
@@ -423,13 +424,13 @@ export default function AppPage() {
         student.id === studentId
           ? (nextStudent = {
               ...student,
-              currentStage: "orient",
+              currentStage: initialStage,
               joinedRevision: current.session.revision ?? 1,
               lastActiveAt: now,
               messages: [
                 ...student.messages,
                 createRestartMarkerMessage(student, current.session, now),
-                createAssistantMessage(getInitialAssistantMessage(current.session), "orient")
+                createAssistantMessage(getInitialAssistantMessage(current.session), initialStage)
               ],
               prompts: [],
               analysis: undefined
@@ -1068,6 +1069,7 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
     const existing = students.find((student) => student.name === trimmedName && student.accessCode === normalizedCode);
     const now = new Date().toISOString();
     const sessionRevision = session.revision ?? 1;
+    const initialStage = getInitialQuestionStage(session);
     const shouldResetExisting = Boolean(existing) && (existing as StudentWorkspace).joinedRevision !== sessionRevision;
     const student: StudentWorkspace =
       existing && !shouldResetExisting
@@ -1078,9 +1080,9 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
         name: trimmedName,
         accessCode: normalizedCode,
         joinedRevision: sessionRevision,
-        currentStage: "orient",
+        currentStage: initialStage,
         lastActiveAt: now,
-        messages: [createAssistantMessage(getInitialAssistantMessage(session), "orient")],
+        messages: [createAssistantMessage(getInitialAssistantMessage(session), initialStage)],
         prompts: [],
         safetyAlerts: [],
         aiLogs: []
@@ -1119,7 +1121,8 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestPrompt = student.prompts.at(-1);
   const finalPrompt = student.prompts.find((prompt) => prompt.isFinal);
-  const stageIndex = getQuestionIndex(session, student.currentStage);
+  const studentStages = getStudentQuestionFlow(session);
+  const stageIndex = studentStages.findIndex((item) => item.stage === student.currentStage);
   const activeSafetyAlerts = getActiveSafetyAlerts(student);
   const isLocked = activeSafetyAlerts.length >= 3;
   const isFinalized = Boolean(finalPrompt);
@@ -1352,7 +1355,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
               <h1 className="truncate text-xl font-black text-ink sm:text-2xl">{student.name}의 프롬프트 대화</h1>
             </div>
             <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-              <span className="rounded-[8px] bg-secondarySoft px-3 py-2 text-sm font-black text-secondary">{getQuestionFlow(session)[Math.max(stageIndex, 0)]?.label ?? "진행 중"}</span>
+              <span className="rounded-[8px] bg-secondarySoft px-3 py-2 text-sm font-black text-secondary">{studentStages[Math.max(stageIndex, 0)]?.label ?? stageLabel(student.currentStage)}</span>
               <SecondaryButton type="button" className="px-3 py-2" onClick={onReset} icon={<RotateCcw size={16} />}>
                 처음부터 진행
               </SecondaryButton>
@@ -2246,7 +2249,11 @@ function EmptyStudentState({ setView }: { setView: (view: View) => void }) {
 }
 
 function StageProgress({ session, currentStage }: { session: SessionConfig; currentStage: string }) {
-  const stages = getQuestionFlow(session);
+  const stages = [
+    ...getStudentQuestionFlow(session),
+    { stage: "revise", label: "수정", question: "" },
+    { stage: "final", label: "최종 확인", question: "" }
+  ];
   const currentIndex = Math.max(0, stages.findIndex((item) => item.stage === currentStage));
   return (
     <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(stages.length || 1, 10)}, minmax(0, 1fr))` }}>

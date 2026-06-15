@@ -1,9 +1,9 @@
 import { buildDraftPrompt, revisePrompt } from "@/lib/prompt-builder";
-import { getNextQuestionStage, getQuestionForStage } from "@/lib/question-flow";
+import { getInitialQuestionStage, getNextQuestionStage, getQuestionForStage } from "@/lib/question-flow";
 import type { ChatMessage, FlowResult, SessionConfig, Stage } from "@/lib/types";
 
 export function getInitialAssistantMessage(config: SessionConfig): string {
-  return getQuestionForStage(config, config.questionFlow[0]?.stage || "orient");
+  return getQuestionForStage(config, getInitialQuestionStage(config));
 }
 
 export function getNextFlow(args: {

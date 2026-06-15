@@ -2,7 +2,9 @@ import type { LessonQuestion, QuestionChoice, SessionConfig, Stage } from "@/lib
 
 export const MAX_QUESTION_COUNT = 50;
 
-export const STAGE_ORDER: Stage[] = ["orient", "explore", "concrete", "describe", "draft", "revise", "final"];
+export const STUDENT_STAGE_ORDER: Stage[] = ["orient", "explore", "concrete", "describe"];
+export const STAGE_ORDER: Stage[] = [...STUDENT_STAGE_ORDER, "draft", "revise", "final"];
+const SYSTEM_STAGES = new Set(["draft", "revise", "final"]);
 
 export const STAGE_LABELS: Record<string, string> = {
   orient: "주제 연결",
@@ -27,7 +29,7 @@ export function normalizeQuestionText(text: string, config: Pick<SessionConfig, 
 }
 
 export function buildDefaultQuestionFlow(config: Pick<SessionConfig, "topic" | "outputType">): LessonQuestion[] {
-  return STAGE_ORDER.map((stage) => ({
+  return STUDENT_STAGE_ORDER.map((stage) => ({
     stage,
     label: STAGE_LABELS[stage],
     question: defaultQuestionTemplate(stage, config),
@@ -36,12 +38,16 @@ export function buildDefaultQuestionFlow(config: Pick<SessionConfig, "topic" | "
 }
 
 export function getQuestionForStage(config: SessionConfig, stage: Stage) {
+  if (SYSTEM_STAGES.has(stage)) return normalizeQuestionText(defaultQuestionTemplate(stage, config), config);
+
   const flow = sanitizeQuestionFlow(config);
   const custom = flow.find((item) => item.stage === stage)?.question;
   return normalizeQuestionText(custom || defaultQuestionTemplate(stage, config), config);
 }
 
 export function getChoicesForStage(config: SessionConfig, stage: Stage): QuestionChoice[] {
+  if (SYSTEM_STAGES.has(stage)) return defaultChoicesForStage(stage, config);
+
   const flow = sanitizeQuestionFlow(config);
   const custom = flow.find((item) => item.stage === stage)?.choices;
   return normalizeChoices(custom && custom.length > 0 ? custom : defaultChoicesForStage(stage, config));
@@ -51,12 +57,16 @@ export function getQuestionFlow(config: SessionConfig): LessonQuestion[] {
   return sanitizeQuestionFlow(config).slice(0, MAX_QUESTION_COUNT);
 }
 
+export function getInitialQuestionStage(config: SessionConfig): Stage {
+  return getStudentQuestionFlow(config)[0]?.stage || "orient";
+}
+
 export function getQuestionIndex(config: SessionConfig, stage: Stage) {
   return getQuestionFlow(config).findIndex((item) => item.stage === stage);
 }
 
 export function getNextQuestionStage(config: SessionConfig, stage: Stage): Stage {
-  const flow = getQuestionFlow(config);
+  const flow = getStudentQuestionFlow(config);
   const index = flow.findIndex((item) => item.stage === stage);
   if (index >= 0 && index < flow.length - 1) return flow[index + 1].stage;
   if (stage !== "draft" && stage !== "revise" && stage !== "final") return "draft";
@@ -93,6 +103,17 @@ export function sanitizeQuestionFlow(config: SessionConfig): LessonQuestion[] {
       choices: normalizeChoices(item.choices && item.choices.length > 0 ? item.choices : defaultChoicesForStage(stage, config))
     };
   });
+}
+
+export function getStudentQuestionFlow(config: SessionConfig): LessonQuestion[] {
+  const studentFlow = getQuestionFlow(config).filter((item) => !isSystemCheckpoint(item));
+  return studentFlow.length > 0 ? studentFlow : buildDefaultQuestionFlow(config).filter((item) => !SYSTEM_STAGES.has(item.stage));
+}
+
+function isSystemCheckpoint(item: LessonQuestion) {
+  if (SYSTEM_STAGES.has(item.stage)) return true;
+  const text = `${item.label} ${item.question}`.replace(/\s/g, "");
+  return /프롬프트.*(만들|작성|생성|초안)|최종본|최종확인|확정할까요/.test(text);
 }
 
 export function normalizeChoices(choices: QuestionChoice[] | undefined): QuestionChoice[] {

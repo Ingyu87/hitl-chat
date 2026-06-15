@@ -105,14 +105,14 @@ function buildLessonDesignPrompt(body: LessonDesignBody) {
     `Create ${targetQuestionCount} or fewer questionFlow items. Never exceed ${MAX_QUESTION_COUNT}.`,
     "Each item must be a short, complete Korean student-facing checkpoint.",
     "The flow should gather visual details: scene, subject, background, action, composition, mood, style, and exclusions.",
+    "Do not create draft, revise, or final as student question checkpoints. The app automatically generates the draft prompt, revision step, and final confirmation after the visual-detail questions.",
     "Do not repeat the same question pattern across stages. Each stage must ask for a different visual decision.",
     "Make questions specific to the lesson topic and learning goal instead of using generic reusable classroom wording.",
     "Avoid vague repeated phrases such as '무엇을 생각하나요', '어떤 장면인가요', or '조금 더 구체적으로' unless the stage truly needs them.",
     "When refining an existing flow, rewrite repetitive questions instead of preserving them unchanged.",
     'Never output the literal string "{{topic}}"; use the actual lesson topic naturally when needed.',
     "Choices are optional but helpful. Use simple Korean labels and values that fit the lesson topic, not generic fixed labels.",
-    "Keep draft, revise, and final checkpoints when useful.",
-    "Use stable stage ids: orient, explore, concrete, describe, draft, revise, final, or question-1.",
+    "Use stable stage ids for student-thinking checkpoints: orient, explore, concrete, describe, or question-1. Avoid draft, revise, and final.",
     "",
     `Mode: ${mode}`,
     `Topic: ${config.topic}`,
@@ -131,10 +131,11 @@ function buildLessonDesignPrompt(body: LessonDesignBody) {
 
 function normalizeQuestionFlow(questionFlow: LessonDesignQuestion[], config: SessionConfig): LessonQuestion[] {
   const fallback = buildDefaultQuestionFlow(config);
-  const incoming = Array.isArray(questionFlow) && questionFlow.length > 0 ? questionFlow : fallback;
+  const incoming = Array.isArray(questionFlow) && questionFlow.length > 0 ? questionFlow.filter((item) => !isSystemCheckpoint(item)) : fallback;
+  const source = incoming.length > 0 ? incoming : fallback;
   const seen = new Set<string>();
 
-  return incoming.slice(0, MAX_QUESTION_COUNT).map((item, index) => {
+  return source.slice(0, MAX_QUESTION_COUNT).map((item, index) => {
     const fallbackItem = fallback[index] ?? fallback[fallback.length - 1];
     const fallbackStage = fallbackItem?.stage ?? `question-${index + 1}`;
     let stage = cleanStage(item.stage || fallbackStage, index);
@@ -148,6 +149,13 @@ function normalizeQuestionFlow(questionFlow: LessonDesignQuestion[], config: Ses
       choices: normalizeChoices(item.choices && item.choices.length > 0 ? item.choices : fallbackItem?.choices)
     };
   });
+}
+
+function isSystemCheckpoint(item: LessonDesignQuestion) {
+  const stage = String(item.stage || "").trim().toLowerCase();
+  if (["draft", "revise", "final"].includes(stage)) return true;
+  const text = `${item.label ?? ""} ${item.question ?? ""}`.replace(/\s/g, "");
+  return /프롬프트.*(만들|작성|생성|초안)|최종본|최종확인|확정할까요/.test(text);
 }
 
 function cleanStage(stage: string, index: number): Stage {

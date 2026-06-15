@@ -117,7 +117,13 @@ export async function POST(request: Request) {
 
 async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null> {
   if ((body.currentStage === "revise" || body.currentStage === "final") && isStudentControlCommand(body.message)) {
-    return null;
+    if (body.latestPrompt) return null;
+    return {
+      alertType: "meaningless",
+      reason: "아직 확정할 이미지 프롬프트 초안이 없습니다.",
+      studentMessage: "아직 확정할 프롬프트 초안이 없어요. 먼저 질문에 맞춰 떠오르는 장면이나 생각을 적어 주세요.",
+      isSafetyAlert: false
+    };
   }
 
   const staticSafety = checkSafety(body.message);

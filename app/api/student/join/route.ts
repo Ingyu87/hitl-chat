@@ -1,4 +1,5 @@
 import { getInitialAssistantMessage } from "@/lib/flow";
+import { getInitialQuestionStage } from "@/lib/question-flow";
 import { requireSupabaseAdmin } from "@/lib/supabase-admin";
 import type { ChatMessage, SessionConfig, StudentWorkspace } from "@/lib/types";
 
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
 
   const existing = existingRows?.[0];
   const now = new Date().toISOString();
+  const initialStage = getInitialQuestionStage(session);
   const shouldReset = Boolean(existing && existing.joined_revision !== (session.revision ?? 1));
   const existingStudent = existing ? { ...rowToStudent(existing), lessonTopic: session.topic } : null;
   const student: StudentWorkspace =
@@ -59,12 +61,12 @@ export async function POST(request: Request) {
           name,
           accessCode: code,
           joinedRevision: session.revision ?? 1,
-          currentStage: "orient",
+          currentStage: initialStage,
           lastActiveAt: now,
           messages: [
             ...(existingStudent ? existingStudent.messages : []),
             ...(existingStudent ? [createRestartMarkerMessage(existingStudent, session, now)] : []),
-            createAssistantMessage(getInitialAssistantMessage(session), "orient")
+            createAssistantMessage(getInitialAssistantMessage(session), initialStage)
           ],
           prompts: [],
           safetyAlerts: existingStudent?.safetyAlerts ?? [],
