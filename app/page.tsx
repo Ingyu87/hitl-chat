@@ -32,6 +32,7 @@ import type { AiAssistLog, ChatMessage, PromptRecord, QuestionChoice, SafetyAler
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
 type TeacherView = "teacher-settings" | "monitoring";
+type LegalDocType = "terms" | "privacy";
 
 type AppData = {
   projects: SessionConfig[];
@@ -53,6 +54,75 @@ const DATA_STORAGE_KEY = "hitl-chat-state-v2";
 const UI_STORAGE_KEY = "hitl-chat-ui-v2";
 const AI_ASSIST_LIMIT = 15;
 const RESTART_MARKER_PREFIX = "__HITL_RESTART__:";
+const LEGAL_DOCUMENTS: Record<LegalDocType, { title: string; content: string }> = {
+  terms: {
+    title: "이용약관",
+    content: `ingyu's AI world(이하 "본 서비스") 이용약관에 오신 것을 환영합니다. 본 약관은 서비스 이용에 관한 기본적인 사항을 정하고 있습니다.
+
+제1조 (목적)
+본 약관은 ingyu's AI world(이하 "서비스")가 제공하는 교육용 협동 글쓰기 웹앱 "우리들의 이야기 릴레이"의 이용과 관련하여 서비스 제공자와 이용자 간의 권리, 의무 및 책임사항을 규정함을 목적으로 합니다.
+
+제2조 (서비스의 제공)
+1. 본 서비스는 초등학생 대상의 AI 기반 협동 글쓰기 웹앱을 제공합니다.
+2. 제공되는 서비스의 주요 기능은 다음과 같습니다.
+- 모둠별 순차적 이야기 이어쓰기 기능
+- AI(Gemini API)를 활용한 실시간 비속어 및 부적절한 단어 필터링
+- 교사의 실시간 활동 모니터링 및 학급 운영 지원 도구
+
+제3조 (서비스 이용 대상)
+1. 본 서비스는 초등학생을 주 대상으로 합니다.
+2. 교사는 학급 단위로 모둠을 생성하고 학생들의 서비스 이용을 관리 및 통제할 권한과 책임이 있습니다.
+3. 만 14세 미만 이용자는 수업 목적의 테두리 안에서 본 서비스를 이용하며, 필요시 법정대리인(보호자) 또는 담당 교사의 지도를 받습니다.
+
+제4조 (서비스 이용 시간)
+1. 서비스는 연중무휴, 1일 24시간 제공함을 원칙으로 합니다.
+2. 단, 시스템 정기 점검, AI API 통신 장애 등 불가피한 사유가 발생할 경우 서비스 제공이 일시 중단될 수 있습니다.
+
+제5조 (이용자의 의무)
+이용자는 다음 행위를 하여서는 안 됩니다.
+1. 타인(친구)의 닉네임을 도용하여 접속하는 행위
+2. 욕설, 비속어, 음란물 등 타인에게 불쾌감을 주는 내용을 게시하는 행위
+3. 필터링 시스템을 의도적으로 우회하여 부적절한 텍스트를 전송하는 행위
+4. 복사 및 붙여넣기 등 서비스가 의도한 정상적인 이용 방식을 방해하는 행위
+
+제6조 (서비스 제공자의 의무)
+1. 서비스 제공자는 안정적인 교육 서비스 제공을 위해 최선을 다합니다.
+2. 학생들의 바른 언어 습관 형성을 위해 AI 필터링 기술을 유지하고 개선합니다.
+
+제7조 (저작권)
+1. 서비스 내 디자인 및 시스템의 저작권은 서비스 제공자에게 있습니다.
+2. 학생들이 작성한 릴레이 이야기의 저작권은 해당 학생들에게 있으나, 서비스 제공자 및 담당 교사는 교육적 목적으로 이를 학급 내에서 활용하거나 게시할 수 있습니다.
+
+제8조 (책임의 제한)
+1. 서비스 제공자는 천재지변, 외부 AI API(Gemini) 장애 등 불가항력적 사유로 인한 서비스 중단에 대해 책임을 지지 않습니다.
+2. 이용자의 귀책사유로 인한 서비스 이용 장애나 닉네임 도용 문제에 대해서는 책임을 지지 않습니다.
+
+제9조 (분쟁 해결 및 효력)
+본 약관은 2026년 3월 1일부터 시행됩니다. 약관 변경 시 사전에 안내합니다.`
+  },
+  privacy: {
+    title: "개인정보처리방침",
+    content: `ingyu's AI world는 학생들의 개인정보 보호를 최우선으로 생각합니다.
+
+1. 수집하는 개인정보의 항목 및 목적
+1) 수집 항목: 본 서비스는 회원가입 절차가 없으며, 이름, 전화번호, 이메일 등 개인을 특정할 수 있는 민감한 정보를 일절 수집하지 않습니다. 단, 활동 진행을 위해 "임시 닉네임"만을 수집합니다.
+2) 수집 및 이용 목적: 수집된 닉네임은 오직 모둠 내에서 순서를 식별하고, 누가 글을 작성했는지 구분하는 교육적 활동 목적(릴레이 글쓰기)으로만 사용됩니다.
+
+2. 개인정보의 보유 및 이용 기간
+본 서비스는 임시 닉네임 외의 정보를 보관하지 않으며, 작성된 이야기 데이터와 닉네임은 해당 학급의 교육 활동(세션)이 종료되거나 담당 교사가 모둠을 삭제할 때까지만 보관됩니다. 영구적인 아카이빙을 목적으로 하지 않습니다.
+
+3. 개인정보의 제3자 제공
+본 서비스는 수집된 닉네임 및 작성 데이터를 외부 제3자에게 제공하거나 상업적으로 이용하지 않습니다. 단, 문장 필터링을 위해 입력된 텍스트는 익명화되어 일시적으로 Gemini API로 전송되며, 학습 데이터로 저장되지 않습니다.
+
+4. 개인정보 보호를 위한 안전성 확보 조치
+서비스 제공자는 학생들의 데이터가 유출되지 않도록 데이터베이스(Firebase) 보안 규칙을 엄격하게 설정하여 접근을 통제하고 있습니다.
+
+5. 개인정보책임자
+개인정보 보호와 관련된 문의 사항은 아래의 연락처로 문의해 주시기 바랍니다.
+- 개인정보책임자: 백인규 교사(서울가동초등학교)
+- 문의: 02-448-5766`
+  }
+};
 const APP_NAME = "생각잇기 프롬프트";
 const APP_SUBTITLE = "학생 답변 기반 이미지 생성 프롬프트 수업 도구";
 
@@ -77,6 +147,7 @@ export default function AppPage() {
   const [ui, setUi] = useState<UiState>(initialUi);
   const [isLoaded, setIsLoaded] = useState(false);
   const [teacherUser, setTeacherUser] = useState<User | null>(null);
+  const [legalDoc, setLegalDoc] = useState<LegalDocType | null>(null);
   const activeStudent = data.students.find((student) => student.id === ui.activeStudentId) ?? null;
 
   useEffect(() => {
@@ -418,54 +489,58 @@ export default function AppPage() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell flex min-h-screen flex-col">
       <TopBar view={ui.view} session={data.session} setView={setView} openTeacherView={openTeacherView} openStudentPreview={openStudentPreview} isTeacherStudentPreview={ui.isTeacherStudentPreview} teacherUser={teacherUser} onLogout={() => void logoutTeacher()} />
-      {ui.view === "home" && (
-        <HomeView
-          projects={data.projects}
-          students={data.projectStudents}
-          activeProjectId={data.activeProjectId}
-          onOpenProject={(projectId) => void openProject(projectId, "monitoring")}
-          onCreateProject={createNewProject}
-          onDeleteProject={(projectId) => void deleteProject(projectId)}
-          onRefresh={() => void refreshProjects()}
-          isTeacherAuthenticated={Boolean(teacherUser)}
-        />
-      )}
-      {ui.view === "student-login" && (
-        <StudentLoginView
-          session={data.session}
-          students={data.students}
-          onEnter={(student, session) => {
-            if (session) {
-              setData((current) => ({
-                ...current,
-                session,
-                activeProjectId: session.id,
-                projects: upsertProject(current.projects, session)
-              }));
-            }
-            upsertStudent(student);
-            setUi((current) => ({ ...current, activeStudentId: student.id, view: "student-chat" }));
-          }}
-        />
-      )}
-      {ui.view === "student-chat" && activeStudent && <StudentChatView session={data.session} student={activeStudent} onChange={upsertStudent} onReset={() => resetStudent(activeStudent.id)} />}
-      {ui.view === "student-chat" && !activeStudent && <EmptyStudentState setView={setView} />}
-      {ui.view === "teacher-auth" && <TeacherAuthView onUnlock={unlockTeacher} />}
-      {ui.view === "teacher-settings" && <TeacherSettingsView session={data.session} onSave={updateSession} setView={setView} />}
-      {ui.view === "monitoring" && (
-        <MonitoringView
-          session={data.session}
-          students={data.students}
-          setView={setView}
-          openTeacherView={openTeacherView}
-          onUpdateSession={updateSession}
-          onUpdateStudent={upsertStudent}
-          onDeleteStudent={deleteStudent}
-          onClearStudents={clearStudents}
-        />
-      )}
+      <div className="flex-1">
+        {ui.view === "home" && (
+          <HomeView
+            projects={data.projects}
+            students={data.projectStudents}
+            activeProjectId={data.activeProjectId}
+            onOpenProject={(projectId) => void openProject(projectId, "monitoring")}
+            onCreateProject={createNewProject}
+            onDeleteProject={(projectId) => void deleteProject(projectId)}
+            onRefresh={() => void refreshProjects()}
+            isTeacherAuthenticated={Boolean(teacherUser)}
+          />
+        )}
+        {ui.view === "student-login" && (
+          <StudentLoginView
+            session={data.session}
+            students={data.students}
+            onEnter={(student, session) => {
+              if (session) {
+                setData((current) => ({
+                  ...current,
+                  session,
+                  activeProjectId: session.id,
+                  projects: upsertProject(current.projects, session)
+                }));
+              }
+              upsertStudent(student);
+              setUi((current) => ({ ...current, activeStudentId: student.id, view: "student-chat" }));
+            }}
+          />
+        )}
+        {ui.view === "student-chat" && activeStudent && <StudentChatView session={data.session} student={activeStudent} onChange={upsertStudent} onReset={() => resetStudent(activeStudent.id)} />}
+        {ui.view === "student-chat" && !activeStudent && <EmptyStudentState setView={setView} />}
+        {ui.view === "teacher-auth" && <TeacherAuthView onUnlock={unlockTeacher} />}
+        {ui.view === "teacher-settings" && <TeacherSettingsView session={data.session} onSave={updateSession} setView={setView} />}
+        {ui.view === "monitoring" && (
+          <MonitoringView
+            session={data.session}
+            students={data.students}
+            setView={setView}
+            openTeacherView={openTeacherView}
+            onUpdateSession={updateSession}
+            onUpdateStudent={upsertStudent}
+            onDeleteStudent={deleteStudent}
+            onClearStudents={clearStudents}
+          />
+        )}
+      </div>
+      <AppFooter onOpenLegal={setLegalDoc} />
+      {legalDoc && <LegalModal document={LEGAL_DOCUMENTS[legalDoc]} onClose={() => setLegalDoc(null)} />}
     </main>
   );
 }
@@ -651,6 +726,45 @@ function buildLocalAnalysisFallback(student: StudentWorkspace): StudentAnalysis 
     nextQuestions: ["장면에서 가장 먼저 보여야 하는 대상은 무엇인가요?"],
     createdAt: new Date().toISOString()
   };
+}
+
+function AppFooter({ onOpenLegal }: { onOpenLegal: (type: LegalDocType) => void }) {
+  return (
+    <footer className="mt-8 border-t border-line/70 bg-ink px-4 py-6 text-center text-xs font-semibold text-white/60">
+      <div className="mx-auto flex max-w-5xl flex-col items-center gap-3">
+        <div className="flex items-center gap-4">
+          <button type="button" className="font-black text-white transition hover:text-primarySoft" onClick={() => onOpenLegal("terms")}>
+            이용약관
+          </button>
+          <button type="button" className="font-black text-white transition hover:text-primarySoft" onClick={() => onOpenLegal("privacy")}>
+            개인정보처리방침
+          </button>
+        </div>
+        <p>© 2026 ingyu&apos;s AI world. All rights reserved.</p>
+        <p>개인정보책임자: 서울가동초등학교 백인규 교사 (02-448-5766)</p>
+      </div>
+    </footer>
+  );
+}
+
+function LegalModal({ document, onClose }: { document: { title: string; content: string }; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/45 p-4" role="dialog" aria-modal="true" aria-labelledby="legal-modal-title">
+      <section className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[8px] bg-white shadow-soft">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <h2 id="legal-modal-title" className="text-lg font-black text-ink">
+            {document.title}
+          </h2>
+          <button type="button" className="rounded-[8px] p-2 text-muted transition hover:bg-surface hover:text-ink" onClick={onClose} title="닫기">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="overflow-y-auto px-5 py-4">
+          <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-ink">{document.content}</p>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function TopBar({
