@@ -224,11 +224,17 @@ export default function AppPage() {
 
       nextData = migrateSavedData(nextData);
 
-      const role = new URLSearchParams(window.location.search).get("role");
+      const params = new URLSearchParams(window.location.search);
+      const role = params.get("role");
+      const urlCode = normalizeAccessCode(params.get("code") ?? "");
       if (role === "student") {
+        const activeStudentForUrl = nextData.students.find((student) => student.id === nextUi.activeStudentId) ?? null;
+        const canResumeStudent =
+          activeStudentForUrl && (!urlCode || normalizeAccessCode(activeStudentForUrl.accessCode) === urlCode);
         nextUi = {
           ...nextUi,
-          view: nextUi.activeStudentId ? "student-chat" : "student-login",
+          view: canResumeStudent ? "student-chat" : "student-login",
+          activeStudentId: canResumeStudent ? activeStudentForUrl.id : null,
           isTeacherStudentPreview: false
         };
       } else if (nextUi.view === "student-login" || nextUi.view === "student-chat" || nextUi.view === "teacher-auth") {
@@ -661,6 +667,10 @@ function buildStudentLink(accessCode: string) {
   url.searchParams.set("role", "student");
   url.searchParams.set("code", accessCode);
   return url.toString();
+}
+
+function normalizeAccessCode(code: string) {
+  return code.trim().toUpperCase();
 }
 
 function previewQuestion(question: string, session: SessionConfig) {
