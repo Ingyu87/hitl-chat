@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   const name = body.name?.trim();
 
   if (!code || !name) {
-    return Response.json({ error: "이름과 접속 코드를 입력해주세요." }, { status: 400 });
+    return Response.json({ error: "닉네임과 접속 코드를 입력해주세요." }, { status: 400 });
   }
 
   const supabase = requireSupabaseAdmin();

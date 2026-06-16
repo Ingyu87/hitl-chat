@@ -84,7 +84,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocType, { title: string; content: string }> 
 
 제5조 (이용자의 의무)
 이용자는 다음 행위를 해서는 안 됩니다.
-1. 타인의 이름 또는 닉네임을 사용하여 접속하는 행위
+1. 타인의 닉네임을 사용하여 접속하는 행위
 2. 욕설, 비속어, 성적 표현, 혐오 표현, 괴롭힘 등 부적절한 내용을 입력하는 행위
 3. 수업 주제와 무관한 내용이나 의미 없는 반복 입력으로 활동을 방해하는 행위
 4. AI 안전 점검 또는 교사 모니터링을 의도적으로 우회하려는 행위
@@ -102,7 +102,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocType, { title: string; content: string }> 
 
 제8조 (책임의 제한)
 1. 서비스 제공자는 천재지변, 외부 서비스(Supabase, Gemini API 등) 장애, 네트워크 문제, 이용자 기기 환경 등 통제하기 어려운 사유로 인한 서비스 중단에 대해 책임을 지지 않습니다.
-2. 이용자가 부정확한 이름을 사용하거나 부적절한 내용을 입력하여 발생한 문제는 해당 이용자 및 수업 관리자의 책임 범위에 속합니다.
+2. 이용자가 부정확한 닉네임을 사용하거나 부적절한 내용을 입력하여 발생한 문제는 해당 이용자 및 수업 관리자의 책임 범위에 속합니다.
 3. AI 응답은 오류가 있을 수 있으므로 교사는 수업 적용 전 내용을 검토해야 합니다.
 
 제9조 (시행일)
@@ -115,7 +115,7 @@ const LEGAL_DOCUMENTS: Record<LegalDocType, { title: string; content: string }> 
 1. 처리하는 개인정보 및 수업 데이터
 1) 교사 계정 정보: 교사 로그인 및 프로젝트 관리를 위해 이메일 주소와 인증 정보가 Supabase Auth를 통해 처리됩니다. 비밀번호는 서비스 제공자가 직접 열람할 수 없는 방식으로 인증 서비스에서 관리됩니다.
 2) 수업 프로젝트 정보: 수업 제목, 주제, 학습 목표, 결과물 유형, 필수 요소, 제약 조건, 질문 흐름, AI 사용 여부, 입장코드, 활성 상태, 수정 시각이 저장됩니다.
-3) 학생 참여 정보: 학생이 입력한 이름 또는 닉네임, 입장코드, 참여한 수업 ID, 현재 진행 단계, 마지막 활동 시각이 저장됩니다.
+3) 학생 참여 정보: 학생이 입력한 닉네임, 입장코드, 참여한 수업 ID, 현재 진행 단계, 마지막 활동 시각이 저장됩니다.
 4) 학생 활동 데이터: 학생과 AI 보조 메시지의 대화 내용, 학생 답변, 생성된 프롬프트 초안 및 최종 프롬프트, 부적절 표현 또는 붙여넣기 등 안전 경고 기록, AI 사용 로그, 교사용 분석 결과가 저장될 수 있습니다.
 5) 본 서비스는 학생의 전화번호, 주소, 주민등록번호, 보호자 연락처 등 수업 진행에 필요하지 않은 민감한 정보를 요구하지 않습니다. 이용자는 이러한 정보를 답변에 입력하지 않아야 합니다.
 
@@ -1037,7 +1037,7 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
     const trimmedName = name.trim();
 
     if (!trimmedName) {
-      setError("이름을 입력해주세요.");
+      setError("닉네임을 입력해주세요.");
       return;
     }
 
@@ -1072,7 +1072,7 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
     }
 
     if (!trimmedName) {
-      setError("이름을 입력해줘.");
+      setError("닉네임을 입력해줘.");
       return;
     }
 
@@ -1108,9 +1108,9 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
           <KeyRound size={24} />
         </span>
         <h1 className="mt-5 text-3xl font-black text-ink">학생 입장</h1>
-        <p className="mt-2 font-semibold leading-7 text-muted">선생님이 알려준 접속 코드와 이름을 입력하면 시작합니다. 이미 진행 중이었다면 새로고침 뒤에도 이어서 할 수 있어요.</p>
+        <p className="mt-2 font-semibold leading-7 text-muted">선생님이 알려준 접속 코드와 닉네임을 입력하면 시작합니다. 이미 진행 중이었다면 새로고침 뒤에도 이어서 할 수 있어요.</p>
         <div className="mt-6 grid gap-4">
-          <TextField label="이름" value={name} onChange={setName} placeholder="예: 김하늘" />
+          <TextField label="닉네임" value={name} onChange={setName} placeholder="예: 하늘" />
           <TextField label="접속 코드" value={code} onChange={(value) => setCode(value.toUpperCase())} placeholder="예: HITL35" />
         </div>
         {error && <p className="mt-4 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{error}</p>}

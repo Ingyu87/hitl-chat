@@ -124,7 +124,7 @@ function getAllowedStages(questionFlow: unknown) {
 
 function validateStudentPayload(student: StudentWorkspace, allowedStages: Set<string>): { ok: true } | { ok: false; error: string } {
   if (!isUuid(student.id) || !isUuid(student.sessionId ?? "")) return { ok: false, error: "학생 또는 수업 식별자가 올바르지 않습니다." };
-  if (!String(student.name ?? "").trim()) return { ok: false, error: "학생 이름이 비어 있습니다." };
+  if (!String(student.name ?? "").trim()) return { ok: false, error: "학생 닉네임이 비어 있습니다." };
   if (!allowedStages.has(String(student.currentStage ?? ""))) return { ok: false, error: "현재 단계 정보가 올바르지 않습니다." };
   if (!isValidIsoDate(student.lastActiveAt)) return { ok: false, error: "최근 활동 시간이 올바르지 않습니다." };
 
