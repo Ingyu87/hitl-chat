@@ -1,6 +1,6 @@
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { getInitialQuestionStage } from "@/lib/question-flow";
-import { requireSupabaseAdmin } from "@/lib/supabase-admin";
+import { getSupabaseAdminConfigError, supabaseAdmin } from "@/lib/supabase-admin";
 import type { ChatMessage, SessionConfig, StudentWorkspace } from "@/lib/types";
 
 const AI_ASSIST_LIMIT = 15;
@@ -20,7 +20,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "닉네임과 접속 코드를 입력해주세요." }, { status: 400 });
   }
 
-  const supabase = requireSupabaseAdmin();
+  const configError = getSupabaseAdminConfigError();
+  if (configError || !supabaseAdmin) {
+    return Response.json({ error: configError ?? "Supabase 연결을 초기화하지 못했습니다." }, { status: 503 });
+  }
+
+  const supabase = supabaseAdmin;
   const { data: sessionRow, error: sessionError } = await supabase
     .from("sessions")
     .select("*")

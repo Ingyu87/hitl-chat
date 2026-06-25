@@ -1,4 +1,4 @@
-import { requireSupabaseAdmin } from "@/lib/supabase-admin";
+import { getSupabaseAdminConfigError, supabaseAdmin } from "@/lib/supabase-admin";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type SaveBody = {
@@ -23,7 +23,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "학생 저장 정보가 부족합니다." }, { status: 400 });
   }
 
-  const supabase = requireSupabaseAdmin();
+  const configError = getSupabaseAdminConfigError();
+  if (configError || !supabaseAdmin) {
+    return Response.json({ error: configError ?? "Supabase 연결을 초기화하지 못했습니다." }, { status: 503 });
+  }
+
+  const supabase = supabaseAdmin;
   const { data: sessionRow, error: sessionError } = await supabase
     .from("sessions")
     .select("id, access_code, is_active, lesson_designed, question_flow")

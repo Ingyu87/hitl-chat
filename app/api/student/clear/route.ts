@@ -1,4 +1,4 @@
-import { requireSupabaseAdmin } from "@/lib/supabase-admin";
+import { getSupabaseAdminConfigError, supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization") ?? "";
@@ -8,7 +8,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
-  const supabase = requireSupabaseAdmin();
+  const configError = getSupabaseAdminConfigError();
+  if (configError || !supabaseAdmin) {
+    return Response.json({ error: configError ?? "Supabase 연결을 초기화하지 못했습니다." }, { status: 503 });
+  }
+
+  const supabase = supabaseAdmin;
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
 
   if (userError || !userData.user) {
