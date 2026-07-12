@@ -23,11 +23,12 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { DEFAULT_SESSION, STAGES } from "@/lib/defaults";
+import { AI_ASSIST_LIMIT, DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { limitPromptLength } from "@/lib/prompt-builder";
 import { buildDefaultQuestionFlow, getChoicesForStage, getInitialQuestionStage, getQuestionFlow, getStudentQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
-import { clearStudentRows, clearStudentRowsForTeacher, createEmptySession, deleteProjectRow, deleteStudentRow, getCurrentTeacher, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
+import { buildRestartMessages, getActiveMessages, getRestartRecords } from "@/lib/restart-marker";
+import { clearStudentRowsForTeacher, createEmptySession, deleteProjectRow, deleteStudentRow, getCurrentTeacher, getTeacherAccessToken, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, QuestionChoice, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
@@ -52,8 +53,6 @@ type UiState = {
 
 const DATA_STORAGE_KEY = "hitl-chat-state-v2";
 const UI_STORAGE_KEY = "hitl-chat-ui-v2";
-const AI_ASSIST_LIMIT = 15;
-const RESTART_MARKER_PREFIX = "__HITL_RESTART__:";
 const LEGAL_DOCUMENTS: Record<LegalDocType, { title: string; content: string }> = {
   terms: {
     title: "이용약관",
@@ -181,6 +180,7 @@ export default function AppPage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [teacherUser, setTeacherUser] = useState<User | null>(null);
   const [legalDoc, setLegalDoc] = useState<LegalDocType | null>(null);
+  const [saveWarning, setSaveWarning] = useState("");
   const activeStudent = data.students.find((student) => student.id === ui.activeStudentId) ?? null;
 
   useEffect(() => {
@@ -280,7 +280,7 @@ export default function AppPage() {
   }, [data, isLoaded]);
 
   useEffect(() => {
-    if (!isLoaded || !teacherUser) return;
+    if (!isLoaded || !teacherUser || ui.view !== "monitoring") return;
 
     const pollTimer = window.setInterval(async () => {
       const students = await loadStudentsForSession(data.session.id);
@@ -288,7 +288,7 @@ export default function AppPage() {
     }, 3000);
 
     return () => window.clearInterval(pollTimer);
-  }, [data.session.id, isLoaded, teacherUser]);
+  }, [data.session.id, isLoaded, teacherUser, ui.view]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -305,31 +305,36 @@ export default function AppPage() {
   }
 
   function updateSession(session: SessionConfig) {
-    setData((current) => {
-      const now = new Date().toISOString();
-      const previousRevision = current.session.revision ?? 1;
-      const nextSession = {
-        ...session,
-        revision: previousRevision + 1,
-        updatedAt: now
-      };
+    const now = new Date().toISOString();
+    const previous = data.session;
+    const sameProject = previous.id === session.id;
+    const baseRevision = (sameProject ? previous.revision : session.revision) ?? 1;
+    // revision이 바뀌면 학생 재입장 시 진행이 초기화되므로,
+    // 질문 흐름이나 주제가 실제로 바뀐 경우에만 올린다(수업 시작/종료 토글 제외).
+    const contentChanged =
+      sameProject &&
+      (previous.topic !== session.topic || JSON.stringify(previous.questionFlow) !== JSON.stringify(session.questionFlow));
+    const nextSession: SessionConfig = {
+      ...session,
+      revision: baseRevision + (contentChanged ? 1 : 0),
+      updatedAt: now
+    };
 
-      if (teacherUser) {
-        void saveTeacherSession(nextSession, teacherUser).then((savedSession) => {
+    setData((current) => ({
+      ...current,
+      projects: upsertProject(current.projects, nextSession),
+      activeProjectId: nextSession.id,
+      session: nextSession
+    }));
+
+    if (teacherUser) {
+      void saveTeacherSession(nextSession, teacherUser)
+        .then((savedSession) => {
           setData((latest) => ({ ...latest, session: savedSession, activeProjectId: savedSession.id, projects: upsertProject(latest.projects, savedSession) }));
           void refreshProjects(teacherUser);
-        });
-      }
-
-      return {
-        ...current,
-        projects: upsertProject(current.projects, nextSession),
-        activeProjectId: nextSession.id,
-        session: {
-          ...nextSession
-        }
-      };
-    });
+        })
+        .catch(() => window.alert("수업 설정을 서버에 저장하지 못했습니다. 네트워크를 확인해 주세요."));
+    }
   }
 
   async function refreshProjects(user = teacherUser) {
@@ -406,7 +411,16 @@ export default function AppPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ student })
-      });
+      })
+        .then(async (response) => {
+          if (response.ok) {
+            setSaveWarning("");
+            return;
+          }
+          const result = (await response.json().catch(() => null)) as { error?: string } | null;
+          setSaveWarning(result?.error ?? "활동 기록을 서버에 저장하지 못했습니다.");
+        })
+        .catch(() => setSaveWarning("활동 기록을 서버에 저장하지 못했습니다. 네트워크를 확인해 주세요."));
     }
 
     setData((current) => ({
@@ -421,32 +435,21 @@ export default function AppPage() {
   }
 
   function resetStudent(studentId: string) {
+    const target = data.students.find((student) => student.id === studentId);
+    if (!target) return;
+
     const now = new Date().toISOString();
     const initialStage = getInitialQuestionStage(data.session);
-    let nextStudent: StudentWorkspace | null = null;
-    setData((current) => ({
-      ...current,
-      students: current.students.map((student) =>
-        student.id === studentId
-          ? (nextStudent = {
-              ...student,
-              currentStage: initialStage,
-              joinedRevision: current.session.revision ?? 1,
-              lastActiveAt: now,
-              messages: [
-                ...student.messages,
-                createRestartMarkerMessage(student, current.session, now),
-                createAssistantMessage(getInitialAssistantMessage(current.session), initialStage)
-              ],
-              prompts: [],
-              analysis: undefined
-            })
-          : student
-      )
-    }));
-    window.setTimeout(() => {
-      if (nextStudent) upsertStudent(nextStudent);
-    }, 0);
+    const nextStudent: StudentWorkspace = {
+      ...target,
+      currentStage: initialStage,
+      joinedRevision: data.session.revision ?? 1,
+      lastActiveAt: now,
+      messages: buildRestartMessages(target, data.session, now, createAssistantMessage(getInitialAssistantMessage(data.session), initialStage)),
+      prompts: [],
+      analysis: undefined
+    };
+    upsertStudent(nextStudent);
   }
 
   async function deleteStudent(studentId: string) {
@@ -464,15 +467,12 @@ export default function AppPage() {
   }
 
   async function clearStudents() {
+    if (!teacherUser) return;
     if (!window.confirm("이 프로젝트의 학생 활동 기록을 모두 삭제할까요?")) return;
 
     try {
-      if (teacherUser) {
-        await clearStudentRowsForTeacher(teacherUser.id, data.session.id);
-      } else {
-        await clearStudentRows(data.session.id);
-      }
-      const remainingStudents = teacherUser ? await loadStudentsForSession(data.session.id) : [];
+      await clearStudentRowsForTeacher(teacherUser.id, data.session.id);
+      const remainingStudents = await loadStudentsForSession(data.session.id);
       setData((current) => replaceProjectStudents(current, current.session.id, remainingStudents, { preserveLocal: false }));
       setUi((current) => ({ ...current, activeStudentId: null }));
       if (remainingStudents.length > 0) {
@@ -562,7 +562,7 @@ export default function AppPage() {
             }}
           />
         )}
-        {ui.view === "student-chat" && activeStudent && <StudentChatView session={data.session} student={activeStudent} onChange={upsertStudent} onReset={() => resetStudent(activeStudent.id)} />}
+        {ui.view === "student-chat" && activeStudent && <StudentChatView session={data.session} student={activeStudent} saveWarning={saveWarning} onChange={upsertStudent} onReset={() => resetStudent(activeStudent.id)} />}
         {ui.view === "student-chat" && !activeStudent && <EmptyStudentState setView={setView} />}
         {ui.view === "teacher-auth" && <TeacherAuthView onUnlock={unlockTeacher} />}
         {ui.view === "teacher-settings" && <TeacherSettingsView session={data.session} onSave={updateSession} setView={setView} />}
@@ -677,15 +677,6 @@ function previewQuestion(question: string, session: SessionConfig) {
   return injectTopic(question, session);
 }
 
-function getTeacherUnlockCode(session: SessionConfig) {
-  const seed = `${session.id || ""}${session.accessCode || ""}`;
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) % 9000;
-  }
-  return String(1000 + hash).padStart(4, "0");
-}
-
 function isLockingAlert(alertType: SafetyAlert["alertType"]) {
   return ["paste_attempt", "profanity", "sexual", "abusive"].includes(alertType);
 }
@@ -715,70 +706,6 @@ function getLastTeacherUnlockTime(student: StudentWorkspace) {
       .filter((message) => message.role === "system" && message.content === "TEACHER_UNLOCK")
       .map((message) => Date.parse(message.createdAt) || 0)
   );
-}
-
-type RestartRecord = {
-  id: string;
-  topic: string;
-  createdAt: string;
-  stage: Stage;
-  messages: ChatMessage[];
-  prompts: PromptRecord[];
-};
-
-function createRestartMarkerMessage(student: StudentWorkspace, session: SessionConfig, createdAt: string): ChatMessage {
-  const snapshot: RestartRecord = {
-    id: crypto.randomUUID(),
-    topic: session.topic,
-    createdAt,
-    stage: student.currentStage,
-    messages: getActiveMessages(student.messages),
-    prompts: student.prompts
-  };
-
-  return {
-    id: crypto.randomUUID(),
-    role: "system",
-    content: `${RESTART_MARKER_PREFIX}${JSON.stringify(snapshot)}`,
-    stage: student.currentStage,
-    createdAt
-  };
-}
-
-function isRestartMarker(message: ChatMessage) {
-  return message.role === "system" && message.content.startsWith(RESTART_MARKER_PREFIX);
-}
-
-function getRestartRecords(student: StudentWorkspace): RestartRecord[] {
-  return student.messages
-    .filter(isRestartMarker)
-    .map((message) => {
-      try {
-        const parsed = JSON.parse(message.content.slice(RESTART_MARKER_PREFIX.length)) as Partial<RestartRecord>;
-        return {
-          id: parsed.id ?? message.id,
-          topic: parsed.topic ?? "",
-          createdAt: parsed.createdAt ?? message.createdAt,
-          stage: parsed.stage ?? message.stage,
-          messages: parsed.messages ?? [],
-          prompts: parsed.prompts ?? []
-        };
-      } catch {
-        return null;
-      }
-    })
-    .filter((record): record is RestartRecord => Boolean(record));
-}
-
-function getActiveMessages(messages: ChatMessage[]) {
-  let lastRestartIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (isRestartMarker(messages[index])) {
-      lastRestartIndex = index;
-      break;
-    }
-  }
-  return messages.slice(lastRestartIndex + 1).filter((message) => message.role !== "system");
 }
 
 function getActiveSafetyAlerts(student: StudentWorkspace) {
@@ -976,7 +903,19 @@ function HomeView({
             const counts = studentCountByProject.get(project.id) ?? { total: 0, final: 0 };
             const isActiveProject = project.id === activeProjectId;
             return (
-              <button type="button" key={project.id} className={`rounded-[8px] border bg-white p-4 text-left shadow-soft transition hover:border-primary ${isActiveProject ? "border-primary" : "border-line"}`} onClick={() => onOpenProject(project.id)}>
+              <div
+                role="button"
+                tabIndex={0}
+                key={project.id}
+                className={`cursor-pointer rounded-[8px] border bg-white p-4 text-left shadow-soft transition hover:border-primary ${isActiveProject ? "border-primary" : "border-line"}`}
+                onClick={() => onOpenProject(project.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpenProject(project.id);
+                  }
+                }}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-black text-primary">{project.isActive ? "진행 중" : "보관됨"}</p>
@@ -984,25 +923,17 @@ function HomeView({
                   </div>
                   <span className="flex items-center gap-2">
                     {isActiveProject && <Check className="text-primary" size={18} />}
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button
+                      type="button"
                       className="inline-flex rounded-[8px] p-2 text-danger hover:bg-dangerSoft"
                       title="프로젝트 삭제"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeleteProject(project.id);
                       }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onDeleteProject(project.id);
-                        }
-                      }}
                     >
                       <Trash2 size={18} />
-                    </span>
+                    </button>
                   </span>
                 </div>
                 <p className="mt-3 line-clamp-2 text-sm font-semibold leading-6 text-muted">{project.topic || "수업 주제가 아직 없습니다."}</p>
@@ -1012,7 +943,7 @@ function HomeView({
                   <InfoRow label="코드" value={project.accessCode} />
                 </div>
                 <p className="mt-3 text-xs font-bold text-muted">최근 수정 {formatDateTime(project.updatedAt)}</p>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -1054,51 +985,6 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
     }
 
     onEnter(result.student as StudentWorkspace, result.session as SessionConfig);
-    return;
-
-    if (!session.isActive) {
-      setError("수업이 아직 시작되지 않았어요. 선생님이 수업을 시작하면 다시 시도해 주세요.");
-      return;
-    }
-
-    if (!session.lessonDesigned || session.questionFlow.length === 0) {
-      setError("선생님이 AI 질문 초안을 승인한 뒤 입장할 수 있어요.");
-      return;
-    }
-
-    if (normalizedCode !== session.accessCode.toUpperCase()) {
-      setError("접속 코드가 맞지 않아요. 선생님이 알려준 코드를 다시 확인해줘.");
-      return;
-    }
-
-    if (!trimmedName) {
-      setError("닉네임을 입력해줘.");
-      return;
-    }
-
-    const existing = students.find((student) => student.name === trimmedName && student.accessCode === normalizedCode);
-    const now = new Date().toISOString();
-    const sessionRevision = session.revision ?? 1;
-    const initialStage = getInitialQuestionStage(session);
-    const shouldResetExisting = Boolean(existing) && (existing as StudentWorkspace).joinedRevision !== sessionRevision;
-    const student: StudentWorkspace =
-      existing && !shouldResetExisting
-        ? (existing as StudentWorkspace)
-        :
-      {
-        id: existing?.id ?? crypto.randomUUID(),
-        name: trimmedName,
-        accessCode: normalizedCode,
-        joinedRevision: sessionRevision,
-        currentStage: initialStage,
-        lastActiveAt: now,
-        messages: [createAssistantMessage(getInitialAssistantMessage(session), initialStage)],
-        prompts: [],
-        safetyAlerts: [],
-        aiLogs: []
-      };
-
-    onEnter({ ...student, lastActiveAt: now });
   }
 
   return (
@@ -1122,7 +1008,7 @@ function StudentLoginView({ session, students, onEnter }: { session: SessionConf
   );
 }
 
-function StudentChatView({ session, student, onChange, onReset }: { session: SessionConfig; student: StudentWorkspace; onChange: (student: StudentWorkspace) => void; onReset: () => void }) {
+function StudentChatView({ session, student, saveWarning, onChange, onReset }: { session: SessionConfig; student: StudentWorkspace; saveWarning: string; onChange: (student: StudentWorkspace) => void; onReset: () => void }) {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -1179,10 +1065,18 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
     onChange({ ...student, messages: nextMessages, safetyAlerts: nextAlerts, lastActiveAt: now });
   }
 
-  function unlockStudent(event: FormEvent) {
+  async function unlockStudent(event: FormEvent) {
     event.preventDefault();
-    if (unlockCode.trim() !== getTeacherUnlockCode(session)) {
-      setUnlockError("해제 코드가 맞지 않습니다. 선생님께 다시 확인해 주세요.");
+
+    const response = await fetch("/api/student/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId: student.id, clientToken: student.clientToken, code: unlockCode.trim() })
+    }).catch(() => null);
+
+    if (!response?.ok) {
+      const result = response ? ((await response.json().catch(() => null)) as { error?: string } | null) : null;
+      setUnlockError(result?.error ?? "해제 코드를 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
       return;
     }
 
@@ -1219,13 +1113,13 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          config: session,
+          studentId: student.id,
+          clientToken: student.clientToken,
           history: activeMessages,
           message: trimmed,
           currentStage: student.currentStage,
           latestPrompt: latestPrompt?.content,
-          loopCount: latestPrompt?.loopCount ?? 0,
-          aiCallCount: student.aiLogs.filter((log) => log.used).length
+          loopCount: latestPrompt?.loopCount ?? 0
         })
       });
 
@@ -1328,7 +1222,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
     <section className="page-band grid min-h-[calc(100dvh-73px)] gap-4 py-3 sm:py-4 lg:h-[calc(100vh-73px)] lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
       {isLocked && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/45 p-4">
-          <form className="w-full max-w-md rounded-[8px] border border-danger/30 bg-white p-5 shadow-soft" onSubmit={unlockStudent}>
+          <form className="w-full max-w-md rounded-[8px] border border-danger/30 bg-white p-5 shadow-soft" onSubmit={(event) => void unlockStudent(event)}>
             <div className="flex items-start gap-3">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[8px] bg-dangerSoft text-danger">
                 <ShieldCheck size={22} />
@@ -1408,6 +1302,7 @@ function StudentChatView({ session, student, onChange, onReset }: { session: Ses
             </div>
           )}
           {sendError && <p className="mb-3 rounded-[8px] bg-dangerSoft px-3 py-2 text-sm font-bold text-danger">{sendError}</p>}
+          {saveWarning && <p className="mb-3 rounded-[8px] bg-amber-100 px-3 py-2 text-sm font-bold text-amber-800">저장 안내: {saveWarning}</p>}
           <textarea
             className="focus-ring h-24 w-full resize-none rounded-[8px] border border-line bg-surface p-3 text-base font-semibold leading-7 text-ink sm:h-20"
             value={input}
@@ -1572,9 +1467,10 @@ function TeacherSettingsView({ session, onSave, setView }: { session: SessionCon
     setIsDesigning(true);
     setDesignStatus(mode === "generate" ? "수업 주제에 맞는 질문 단계와 필수 요소를 설계하고 있습니다." : "현재 수업 설계를 다듬고 있습니다.");
     try {
+      const token = await getTeacherAccessToken();
       const response = await fetch("/api/lesson-design", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ config: currentDraft(), mode })
       });
       const result = await response.json();
@@ -1933,7 +1829,8 @@ function MonitoringView({
       const final = student.prompts.find((prompt) => prompt.isFinal);
       return [student.name, student.lessonTopic ?? session.topic, student.currentStage, student.lastActiveAt, getRestartRecords(student).length, latest?.loopCount ?? 0, final?.content ?? latest?.content ?? "", student.safetyAlerts.length, student.analysis?.summary ?? ""];
     });
-    const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    // BOM은 엑셀 한글 깨짐 방지, 선행 특수문자 이스케이프는 수식 인젝션 방지용.
+    const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -1946,9 +1843,10 @@ function MonitoringView({
   async function analyzeStudent(student: StudentWorkspace) {
     setIsAnalyzing(true);
     try {
+      const token = await getTeacherAccessToken();
       const response = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ session, student })
       });
       const result = await response.json();
@@ -2005,7 +1903,7 @@ function MonitoringView({
           <dl className="grid gap-3 text-sm md:grid-cols-[1.5fr_0.5fr]">
             <InfoRow label="학생 입장 링크" value={isStudentLinkReady ? studentLink : "AI 질문 초안 승인 후 생성됩니다"} />
             <InfoRow label="접속 코드" value={session.accessCode} />
-            <InfoRow label="교사 해제 코드" value={getTeacherUnlockCode(session)} />
+            <InfoRow label="교사 해제 코드" value={session.unlockCode ?? "수업 저장 후 표시됩니다"} />
           </dl>
           <div className="mt-4 flex flex-wrap gap-2">
             <SecondaryButton type="button" onClick={() => void copyText(isStudentLinkReady ? studentLink : "")} disabled={!isStudentLinkReady} icon={<Copy size={18} />}>
@@ -2037,11 +1935,18 @@ function MonitoringView({
             const latest = student.prompts.at(-1);
             const final = student.prompts.find((prompt) => prompt.isFinal);
             return (
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 key={student.id}
-                className="grid w-full gap-3 border-b border-line px-4 py-4 text-left text-sm font-semibold text-ink transition hover:bg-primarySoft/50 last:border-b-0 lg:grid-cols-[1fr_1fr_0.9fr_0.7fr_0.7fr_1.4fr_0.5fr]"
+                className="grid w-full cursor-pointer gap-3 border-b border-line px-4 py-4 text-left text-sm font-semibold text-ink transition hover:bg-primarySoft/50 last:border-b-0 lg:grid-cols-[1fr_1fr_0.9fr_0.7fr_0.7fr_1.4fr_0.5fr]"
                 onClick={() => setSelectedStudentId(student.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedStudentId(student.id);
+                  }
+                }}
               >
                 <span>
                   <strong className="block text-base">{student.name}</strong>
@@ -2053,22 +1958,19 @@ function MonitoringView({
                 <span className={student.safetyAlerts.length > 0 ? "text-danger" : "text-muted"}>{student.safetyAlerts.length}건</span>
                 <span className="truncate">{final ? final.content : latest ? `초안 v${latest.version}` : "대화 중"}</span>
                 <span>
-                  <span
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     className="inline-flex text-danger"
+                    title="학생 삭제"
                     onClick={(event) => {
                       event.stopPropagation();
                       void onDeleteStudent(student.id);
                     }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void onDeleteStudent(student.id);
-                    }}
                   >
                     <Trash2 size={18} />
-                  </span>
+                  </button>
                 </span>
-              </button>
+              </div>
             );
           })
         )}
@@ -2419,32 +2321,37 @@ function stageLabel(stage: string) {
   return STAGES.find((item) => item.stage === stage)?.label ?? stage;
 }
 
-function sourceLabel(source: PromptRecord["source"]) {
-  if (source === "ai_assisted") return "AI 생성";
-  if (source === "student_revision") return "학생 수정";
-  return "규칙 기반";
-}
-
 function alertLabel(alertType: SafetyAlert["alertType"]) {
   if (alertType === "paste_attempt") return "붙여넣기";
-  if (alertType === "profanity") return "부적절 표현";
+  if (alertType === "profanity") return "욕설/비속어";
+  if (alertType === "sexual") return "성적 표현";
+  if (alertType === "abusive") return "폭언/혐오";
   if (alertType === "off_topic") return "주제 이탈";
   return "무의미 입력";
 }
 
+function csvCell(cell: unknown) {
+  const text = String(cell ?? "");
+  const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
 function formatTime(value: string) {
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) return "-";
   return new Intl.DateTimeFormat("ko-KR", {
     hour: "2-digit",
     minute: "2-digit"
-  }).format(new Date(value));
+  }).format(time);
 }
 
 function formatDateTime(value?: string) {
-  const date = value ? new Date(value) : new Date(0);
+  const time = value ? Date.parse(value) : NaN;
+  if (Number.isNaN(time)) return "-";
   return new Intl.DateTimeFormat("ko-KR", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
-  }).format(date);
+  }).format(time);
 }

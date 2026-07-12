@@ -1,18 +1,31 @@
 import { maybeAssistWithAi } from "@/lib/ai-assist";
 import { callAiJson, getAiProvider, hasAiApiKey } from "@/lib/ai-provider";
 import { getNextFlow } from "@/lib/flow";
+import { isFinalApproval, isPromptRequest } from "@/lib/prompt-builder";
 import { getChoicesForStage, getQuestionForStage } from "@/lib/question-flow";
 import { checkSafety } from "@/lib/safety";
+import { sessionRowToConfig, type SessionDbRow } from "@/lib/session-row";
+import { getSupabaseAdminConfigError, supabaseAdmin } from "@/lib/supabase-admin";
 import type { AiAssistLog, ChatMessage, PromptSource, SafetyAlert, SessionConfig, Stage } from "@/lib/types";
 
 type ChatBody = {
+  studentId?: string;
+  clientToken?: string;
+  history?: ChatMessage[];
+  message?: string;
+  currentStage?: Stage;
+  latestPrompt?: string;
+  loopCount?: number;
+};
+
+// 세션 설정과 AI 사용 횟수는 클라이언트 입력을 신뢰하지 않고 DB에서 읽는다.
+type ChatContext = {
   config: SessionConfig;
   history: ChatMessage[];
   message: string;
   currentStage: Stage;
   latestPrompt?: string;
   loopCount: number;
-  aiCallCount?: number;
 };
 
 type ChatWarning = {
@@ -39,18 +52,76 @@ const moderationSchema = {
 };
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as ChatBody;
+  const body = (await request.json().catch(() => ({}))) as ChatBody;
+  const studentId = String(body.studentId ?? "").trim();
+  const clientToken = String(body.clientToken ?? "").trim();
+  const message = String(body.message ?? "");
+  const currentStage = String(body.currentStage ?? "").trim();
+
+  if (!studentId || !clientToken || !message.trim() || !currentStage) {
+    return Response.json({ error: "요청 정보가 부족합니다. 학생 입장 화면에서 다시 입장해 주세요." }, { status: 400 });
+  }
+
+  const configError = getSupabaseAdminConfigError();
+  if (configError || !supabaseAdmin) {
+    return Response.json({ error: configError ?? "Supabase 연결을 초기화하지 못했습니다." }, { status: 503 });
+  }
+
+  const { data: studentRow, error: studentError } = await supabaseAdmin
+    .from("students")
+    .select("id, session_id, client_token, ai_logs")
+    .eq("id", studentId)
+    .maybeSingle();
+
+  if (studentError) {
+    return Response.json({ error: studentError.message }, { status: 500 });
+  }
+
+  if (!studentRow) {
+    return Response.json({ error: "학생 입장 기록이 없습니다. 다시 입장해 주세요." }, { status: 404 });
+  }
+
+  if (!studentRow.client_token || studentRow.client_token !== clientToken) {
+    return Response.json({ error: "학생 인증 정보가 올바르지 않습니다. 다시 입장해 주세요." }, { status: 403 });
+  }
+
+  const { data: sessionRow, error: sessionError } = await supabaseAdmin
+    .from("sessions")
+    .select("*")
+    .eq("id", studentRow.session_id)
+    .maybeSingle();
+
+  if (sessionError) {
+    return Response.json({ error: sessionError.message }, { status: 500 });
+  }
+
+  if (!sessionRow) {
+    return Response.json({ error: "수업을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  if (!sessionRow.is_active || !sessionRow.lesson_designed) {
+    return Response.json({ error: "지금은 수업이 진행 중이 아니에요. 선생님이 수업을 시작하면 다시 시도해 주세요." }, { status: 403 });
+  }
+
+  const context: ChatContext = {
+    config: sessionRowToConfig(sessionRow as SessionDbRow),
+    history: Array.isArray(body.history) ? body.history : [],
+    message,
+    currentStage,
+    latestPrompt: body.latestPrompt,
+    loopCount: Number.isFinite(body.loopCount) ? Number(body.loopCount) : 0
+  };
   const now = new Date().toISOString();
 
   const userMessage: ChatMessage = {
     id: crypto.randomUUID(),
     role: "user",
-    content: body.message,
-    stage: body.currentStage,
+    content: context.message,
+    stage: context.currentStage,
     createdAt: now
   };
 
-  const problem = await classifyProblemAnswer(body);
+  const problem = await classifyProblemAnswer(context);
   if (problem) {
     if (problem.isSafetyAlert) {
       return Response.json({
@@ -58,10 +129,10 @@ export async function POST(request: Request) {
         alertType: problem.alertType,
         reason: problem.reason,
         message: problem.studentMessage,
-        stage: body.currentStage,
+        stage: context.currentStage,
         shouldCreatePrompt: false,
         isFinal: false,
-        aiLog: createAiLog("safety_check", body.currentStage, false, problem.alertType)
+        aiLog: createAiLog("safety_check", context.currentStage, false, problem.alertType)
       });
     }
 
@@ -69,28 +140,28 @@ export async function POST(request: Request) {
       blocked: false,
       clarification: true,
       userMessage,
-      assistantMessage: createAssistantMessage(problem.studentMessage, body.currentStage),
-      stage: body.currentStage,
+      assistantMessage: createAssistantMessage(problem.studentMessage, context.currentStage),
+      stage: context.currentStage,
       shouldCreatePrompt: false,
       isFinal: false,
-      aiLog: createAiLog("safety_check", body.currentStage, false, problem.alertType)
+      aiLog: createAiLog("safety_check", context.currentStage, false, problem.alertType)
     });
   }
 
-  const historyWithInput = [...body.history, userMessage];
+  const historyWithInput = [...context.history, userMessage];
   const flow = getNextFlow({
-    config: body.config,
+    config: context.config,
     history: historyWithInput,
-    studentInput: body.message,
-    currentStage: body.currentStage,
-    latestPrompt: body.latestPrompt,
-    loopCount: body.loopCount
+    studentInput: context.message,
+    currentStage: context.currentStage,
+    latestPrompt: context.latestPrompt,
+    loopCount: context.loopCount
   });
 
-  const aiCallCount = body.aiCallCount ?? body.history.filter((message) => message.role === "assistant").length;
+  const aiCallCount = (Array.isArray(studentRow.ai_logs) ? (studentRow.ai_logs as AiAssistLog[]) : []).filter((log) => log?.used).length;
   const baseText = flow.draftPrompt ?? flow.assistantMessage;
   const ai = await maybeAssistWithAi({
-    config: body.config,
+    config: context.config,
     stage: flow.nextStage,
     purpose: flow.aiPurpose,
     baseText,
@@ -98,7 +169,7 @@ export async function POST(request: Request) {
     aiCallCount
   });
 
-  const assistantText = flow.draftPrompt ? flow.assistantMessage.replace(flow.draftPrompt, ai.text) : ai.text;
+  const assistantText = flow.draftPrompt ? flow.assistantMessage.replace(flow.draftPrompt, () => ai.text) : ai.text;
   const draftPrompt = flow.shouldCreatePrompt ? ai.text : undefined;
   const promptSource: PromptSource | undefined = flow.shouldCreatePrompt ? (ai.used ? "ai_assisted" : flow.promptSource ?? "rule") : undefined;
 
@@ -115,9 +186,9 @@ export async function POST(request: Request) {
   });
 }
 
-async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null> {
-  if ((body.currentStage === "revise" || body.currentStage === "final") && isStudentControlCommand(body.message)) {
-    if (body.latestPrompt) return null;
+async function classifyProblemAnswer(context: ChatContext): Promise<ChatWarning | null> {
+  if ((context.currentStage === "revise" || context.currentStage === "final") && (isFinalApproval(context.message) || isPromptRequest(context.message))) {
+    if (context.latestPrompt) return null;
     return {
       alertType: "meaningless",
       reason: "아직 확정할 이미지 프롬프트 초안이 없습니다.",
@@ -126,7 +197,7 @@ async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null
     };
   }
 
-  const staticSafety = checkSafety(body.message);
+  const staticSafety = checkSafety(context.message);
   if (!staticSafety.isSafe && staticSafety.alertType && staticSafety.message) {
     return {
       alertType: staticSafety.alertType,
@@ -136,25 +207,21 @@ async function classifyProblemAnswer(body: ChatBody): Promise<ChatWarning | null
     };
   }
 
-  const staticWarning = classifyWeakAnswer(body.message, body.config, body.currentStage);
+  const staticWarning = classifyWeakAnswer(context.message, context.config, context.currentStage);
   if (staticWarning) return staticWarning;
 
-  const aiWarning = await classifyWithAi(body);
+  const aiWarning = await classifyWithAi(context);
   if (aiWarning) return aiWarning;
 
   return null;
 }
 
-function isStudentControlCommand(input: string) {
-  return /(이대로확정|최종확정|확정|좋아|괜찮아|완성|최종|프롬프트|결과|만들어|작성|보여|알려|ok|yes)/i.test(input.replace(/\s/g, ""));
-}
-
-async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
-  if (!hasAiApiKey() || isChoiceAnswer(body.message, body.config, body.currentStage) || isValidShortAnswerForQuestion(body.message, body.config, body.currentStage)) return null;
+async function classifyWithAi(context: ChatContext): Promise<ChatWarning | null> {
+  if (!hasAiApiKey() || isChoiceAnswer(context.message, context.config, context.currentStage) || isValidShortAnswerForQuestion(context.message, context.config, context.currentStage)) return null;
 
   try {
-    const currentFlow = getQuestionForStage(body.config, body.currentStage);
-    const recent = body.history
+    const currentFlow = getQuestionForStage(context.config, context.currentStage);
+    const recent = context.history
       .slice(-6)
       .map((message) => `${message.role}(${message.stage}): ${message.content}`)
       .join("\n");
@@ -171,11 +238,11 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
       "For a style/mood question, answers like 픽셀 아트, 수채화, 밝게, 포스터풍 are safe.",
       "Every reason and studentMessage value must be written in Korean.",
       "",
-      `Lesson topic: ${body.config.topic}`,
+      `Lesson topic: ${context.config.topic}`,
       `Current question: ${currentFlow}`,
       "Recent conversation:",
       recent || "none",
-      `Student answer: ${body.message}`,
+      `Student answer: ${context.message}`,
       "",
       'Return shape: {"category":"safe","reason":"짧은 한국어 이유","studentMessage":"학생에게 보여줄 한국어 메시지"}'
     ].join("\n");
@@ -190,7 +257,7 @@ async function classifyWithAi(body: ChatBody): Promise<ChatWarning | null> {
     return {
       alertType: result.category,
       reason: result.reason || fallbackReasonText(result.category),
-      studentMessage: result.studentMessage || fallbackStudentMessage(result.category, body.config, body.currentStage),
+      studentMessage: result.studentMessage || fallbackStudentMessage(result.category, context.config, context.currentStage),
       isSafetyAlert: !["meaningless", "off_topic"].includes(result.category)
     };
   } catch {
@@ -407,24 +474,4 @@ function fallbackStudentMessage(category: Exclude<AiModeration["category"], "saf
   }
 
   return `아무 말이나 쓰기보다, 지금 질문에 맞춰 떠오르는 장면이나 생각을 네 말로 적어 주세요. 짧아도 괜찮아요.\n\n${getQuestionForStage(config, stage)}`;
-}
-
-function defaultReason(category: AiModeration["category"]) {
-  if (category === "profanity") return "욕설 또는 비속어가 포함되어 있습니다.";
-  if (category === "sexual") return "성적인 표현이 포함되어 있습니다.";
-  if (category === "abusive") return "폭언, 모욕, 혐오 표현이 포함되어 있습니다.";
-  if (category === "meaningless") return "답변이 아직 구체적이지 않습니다.";
-  if (category === "off_topic") return "질문 또는 수업 주제와 관련이 약한 답변입니다.";
-  return "수업 진행에 맞게 다시 확인이 필요한 답변입니다.";
-}
-
-function defaultStudentMessage(category: Exclude<AiModeration["category"], "safe">, config: SessionConfig, stage: Stage) {
-  if (category === "profanity") return "욕설이나 비속어는 수업 대화에 사용할 수 없어요. 표현을 바꿔서 다시 말해 주세요.";
-  if (category === "sexual") return "성적인 내용은 이 수업 활동에서 사용할 수 없어요. 수업 주제에 맞는 장면으로 다시 말해 주세요.";
-  if (category === "abusive") return "폭언, 모욕, 혐오 표현은 사용할 수 없어요. 상대를 존중하는 표현으로 다시 말해 주세요.";
-  if (category === "off_topic") {
-    return `지금 답변은 수업 주제와 조금 멀어 보여요. "${config.topic}"와 연결되는 장면이나 생각으로 다시 말해 주세요.\n\n${getQuestionForStage(config, stage)}`;
-  }
-
-  return `질문에 어울리는 답이 필요해요. 원하는 장면이나 생각을 한 문장으로 다시 말해 주세요.\n\n${getQuestionForStage(config, stage)}`;
 }

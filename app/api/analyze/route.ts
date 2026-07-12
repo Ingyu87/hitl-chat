@@ -1,4 +1,5 @@
 import { callAiJson } from "@/lib/ai-provider";
+import { getTeacherFromAuthHeader } from "@/lib/supabase-admin";
 import type { SessionConfig, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type AnalyzeBody = {
@@ -22,6 +23,11 @@ const analysisSchema = {
 };
 
 export async function POST(request: Request) {
+  const teacher = await getTeacherFromAuthHeader(request);
+  if (!teacher) {
+    return Response.json({ error: "교사 로그인이 필요합니다." }, { status: 401 });
+  }
+
   const body = (await request.json()) as AnalyzeBody;
   const fallback = buildFallbackAnalysis(body);
 

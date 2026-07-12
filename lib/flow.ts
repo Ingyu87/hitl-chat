@@ -1,4 +1,4 @@
-import { buildDraftPrompt, revisePrompt } from "@/lib/prompt-builder";
+import { buildDraftPrompt, isFinalApproval, isPromptRequest, revisePrompt } from "@/lib/prompt-builder";
 import { getInitialQuestionStage, getNextQuestionStage, getQuestionForStage } from "@/lib/question-flow";
 import type { ChatMessage, FlowResult, SessionConfig, Stage } from "@/lib/types";
 
@@ -79,10 +79,3 @@ function createDraftPromptFlow(config: SessionConfig, history: ChatMessage[]): F
   };
 }
 
-function isFinalApproval(input: string): boolean {
-  return /(이대로확정|최종확정|확정|좋아|좋습니다|괜찮아|완성|최종|ok|yes)/i.test(input.replace(/\s/g, ""));
-}
-
-function isPromptRequest(input: string): boolean {
-  return /(프롬프트|결과|만들어|작성|보여|알려|완성)/i.test(input.replace(/\s/g, ""));
-}

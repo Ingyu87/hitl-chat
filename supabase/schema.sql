@@ -52,7 +52,10 @@ alter table sessions add column if not exists updated_at timestamptz not null de
 alter table sessions alter column ai_calls_per_student_limit set default 15;
 alter table sessions alter column ai_enabled set default true;
 
+alter table sessions add column if not exists unlock_code text not null default lpad(((floor(random() * 9000))::int + 1000)::text, 4, '0');
+
 alter table students add column if not exists joined_revision int not null default 1;
+alter table students add column if not exists client_token uuid not null default gen_random_uuid();
 alter table students add column if not exists messages jsonb not null default '[]'::jsonb;
 alter table students add column if not exists prompts jsonb not null default '[]'::jsonb;
 alter table students add column if not exists safety_alerts jsonb not null default '[]'::jsonb;
@@ -83,7 +86,28 @@ create trigger students_set_updated_at
 before update on students
 for each row execute function set_updated_at();
 
--- MVP policy:
--- The app currently uses Supabase Auth on the client for teacher reads/writes
--- and service-role route handlers for student join/save. Full RLS hardening is
--- intentionally deferred until after classroom pilot stabilization.
+-- Access model:
+-- Teachers use Supabase Auth on the client (anon key) and may only touch their
+-- own sessions/students via the policies below. Student flows never use the
+-- anon key directly; they go through service-role route handlers
+-- (join/save/chat/unlock) which bypass RLS and verify the per-student
+-- client_token issued at join time.
+
+alter table sessions enable row level security;
+alter table students enable row level security;
+
+drop policy if exists "teachers manage own sessions" on sessions;
+create policy "teachers manage own sessions" on sessions
+  for all to authenticated
+  using (teacher_id = auth.uid())
+  with check (teacher_id = auth.uid());
+
+drop policy if exists "teachers read own students" on students;
+create policy "teachers read own students" on students
+  for select to authenticated
+  using (
+    exists (
+      select 1 from sessions s
+      where s.id = students.session_id and s.teacher_id = auth.uid()
+    )
+  );

@@ -1,5 +1,6 @@
 import { callAiJson } from "@/lib/ai-provider";
 import { buildDefaultQuestionFlow, MAX_QUESTION_COUNT, normalizeChoices, sanitizeQuestionFlow, STAGE_LABELS, STAGE_ORDER } from "@/lib/question-flow";
+import { getTeacherFromAuthHeader } from "@/lib/supabase-admin";
 import type { LessonQuestion, QuestionChoice, SessionConfig, Stage } from "@/lib/types";
 
 type LessonDesignBody = {
@@ -54,6 +55,11 @@ const lessonDesignSchema = {
 };
 
 export async function POST(request: Request) {
+  const teacher = await getTeacherFromAuthHeader(request);
+  if (!teacher) {
+    return Response.json({ error: "교사 로그인이 필요합니다." }, { status: 401 });
+  }
+
   const body = (await request.json()) as LessonDesignBody;
   const fallback = {
     questionFlow: body.mode === "refine" ? sanitizeQuestionFlow(body.config) : buildDefaultQuestionFlow(body.config),

@@ -1,3 +1,4 @@
+import { AI_ASSIST_LIMIT } from "@/lib/defaults";
 import { getSupabaseAdminConfigError, supabaseAdmin } from "@/lib/supabase-admin";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
@@ -5,7 +6,6 @@ type SaveBody = {
   student: StudentWorkspace;
 };
 
-const AI_ASSIST_LIMIT = 15;
 const MAX_MESSAGES = 140;
 const MAX_PROMPTS = 30;
 const MAX_SAFETY_ALERTS = 50;
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
 
   const { data: existingRow, error: existingError } = await supabase
     .from("students")
-    .select("id, session_id, name, access_code, last_active_at")
+    .select("id, session_id, name, access_code, client_token, last_active_at")
     .eq("id", student.id)
     .maybeSingle();
 
@@ -69,6 +69,10 @@ export async function POST(request: Request) {
     return Response.json({ error: "학생 기록이 현재 수업과 일치하지 않습니다." }, { status: 403 });
   }
 
+  if (!existingRow.client_token || existingRow.client_token !== String(student.clientToken ?? "")) {
+    return Response.json({ error: "학생 인증 정보가 올바르지 않습니다. 다시 입장해 주세요." }, { status: 403 });
+  }
+
   const validation = validateStudentPayload(student, getAllowedStages(sessionRow.question_flow));
   if (!validation.ok) {
     return Response.json({ error: validation.error }, { status: 400 });
@@ -81,8 +85,6 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("students")
     .update({
-      id: student.id,
-      session_id: student.sessionId,
       name: String(existingRow.name || student.name).trim(),
       access_code: sessionRow.access_code,
       current_stage: student.currentStage,

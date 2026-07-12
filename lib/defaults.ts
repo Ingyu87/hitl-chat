@@ -1,6 +1,8 @@
 import type { SessionConfig } from "@/lib/types";
 import { STAGE_LABELS, STAGE_ORDER } from "@/lib/question-flow";
 
+export const AI_ASSIST_LIMIT = 15;
+
 export const STAGES = STAGE_ORDER.map((stage) => ({
   stage,
   label: STAGE_LABELS[stage]
@@ -20,7 +22,7 @@ export const DEFAULT_SESSION: SessionConfig = {
   aiEnabled: true,
   aiProvider: "gemini",
   aiUsagePolicy: "questions_and_prompts",
-  aiCallsPerStudentLimit: 15,
+  aiCallsPerStudentLimit: AI_ASSIST_LIMIT,
   accessCode: "HITL35",
   isActive: false,
   revision: 1,

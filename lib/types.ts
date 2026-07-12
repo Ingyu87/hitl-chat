@@ -22,6 +22,7 @@ export type SessionConfig = {
   aiUsagePolicy: "questions_and_prompts";
   aiCallsPerStudentLimit: number;
   accessCode: string;
+  unlockCode?: string;
   isActive: boolean;
   revision?: number;
   updatedAt?: string;
@@ -93,6 +94,7 @@ export type StudentWorkspace = {
   lessonTopic?: string;
   name: string;
   accessCode: string;
+  clientToken?: string;
   joinedRevision?: number;
   currentStage: Stage;
   lastActiveAt: string;

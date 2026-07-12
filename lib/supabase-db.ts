@@ -1,10 +1,9 @@
 import { createClient, type User } from "@supabase/supabase-js";
-import { DEFAULT_SESSION } from "@/lib/defaults";
+import { AI_ASSIST_LIMIT, DEFAULT_SESSION } from "@/lib/defaults";
 import type { SessionConfig, StudentWorkspace } from "@/lib/types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const AI_ASSIST_LIMIT = 15;
 
 export const supabaseBrowser =
   supabaseUrl && supabaseAnonKey
@@ -19,6 +18,7 @@ type SessionRow = {
   learning_goal: string;
   output_type: string;
   access_code: string;
+  unlock_code: string | null;
   required_elements: string[];
   constraints: string[];
   question_flow: SessionConfig["questionFlow"];
@@ -36,6 +36,7 @@ type StudentRow = {
   session_id: string;
   name: string;
   access_code: string;
+  client_token: string | null;
   current_stage: StudentWorkspace["currentStage"];
   joined_revision: number;
   messages: StudentWorkspace["messages"];
@@ -46,8 +47,10 @@ type StudentRow = {
   last_active_at: string;
 };
 
-export function isSupabaseReady() {
-  return Boolean(supabaseBrowser);
+export async function getTeacherAccessToken() {
+  if (!supabaseBrowser) return null;
+  const { data } = await supabaseBrowser.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
 export async function getCurrentTeacher() {
@@ -173,8 +176,7 @@ export async function saveTeacherSession(session: SessionConfig, user: User) {
 
 export async function deleteStudentRow(studentId: string) {
   if (!supabaseBrowser) return;
-  const { data } = await supabaseBrowser.auth.getSession();
-  const token = data.session?.access_token;
+  const token = await getTeacherAccessToken();
 
   if (!token) {
     throw new Error("로그인이 필요합니다.");
@@ -197,8 +199,7 @@ export async function deleteStudentRow(studentId: string) {
 
 export async function deleteProjectRow(projectId: string) {
   if (!supabaseBrowser) return;
-  const { data } = await supabaseBrowser.auth.getSession();
-  const token = data.session?.access_token;
+  const token = await getTeacherAccessToken();
 
   if (!token) {
     throw new Error("로그인이 필요합니다.");
@@ -219,16 +220,9 @@ export async function deleteProjectRow(projectId: string) {
   }
 }
 
-export async function clearStudentRows(sessionId: string) {
-  if (!supabaseBrowser) return;
-  const { error } = await supabaseBrowser.from("students").delete().eq("session_id", sessionId);
-  if (error) throw error;
-}
-
 export async function clearStudentRowsForTeacher(teacherId: string, sessionId?: string) {
   if (!supabaseBrowser) return;
-  const { data } = await supabaseBrowser.auth.getSession();
-  const token = data.session?.access_token;
+  const token = await getTeacherAccessToken();
 
   if (!token) {
     throw new Error("로그인이 필요합니다.");
@@ -254,6 +248,7 @@ export function createEmptySession(): SessionConfig {
     ...DEFAULT_SESSION,
     id: crypto.randomUUID(),
     accessCode: createAccessCode(),
+    unlockCode: createUnlockCode(),
     updatedAt: new Date().toISOString()
   };
 }
@@ -266,6 +261,7 @@ function rowToSession(row: SessionRow): SessionConfig {
     learningGoal: row.learning_goal,
     outputType: row.output_type,
     accessCode: row.access_code,
+    unlockCode: row.unlock_code ?? undefined,
     requiredElements: row.required_elements ?? [],
     constraints: row.constraints ?? [],
     questionFlow: row.question_flow ?? [],
@@ -290,6 +286,7 @@ function sessionToRow(session: SessionConfig, teacherId: string) {
     learning_goal: session.learningGoal,
     output_type: session.outputType,
     access_code: session.accessCode || createAccessCode(),
+    unlock_code: session.unlockCode || createUnlockCode(),
     required_elements: session.requiredElements ?? [],
     constraints: session.constraints ?? [],
     question_flow: session.questionFlow ?? [],
@@ -309,6 +306,7 @@ function rowToStudent(row: StudentRow, lessonTopic?: string): StudentWorkspace {
     lessonTopic,
     name: row.name,
     accessCode: row.access_code,
+    clientToken: row.client_token ?? undefined,
     joinedRevision: row.joined_revision,
     currentStage: row.current_stage,
     lastActiveAt: row.last_active_at,
@@ -322,6 +320,10 @@ function rowToStudent(row: StudentRow, lessonTopic?: string): StudentWorkspace {
 
 function createAccessCode() {
   return `HITL${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+function createUnlockCode() {
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 function isUuid(value: string) {

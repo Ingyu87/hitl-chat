@@ -27,9 +27,11 @@ export function getSupabaseAdminConfigError() {
   return supabaseAdmin ? null : CONFIGURATION_ERROR;
 }
 
-export function requireSupabaseAdmin() {
-  if (!supabaseAdmin) {
-    throw new Error(CONFIGURATION_ERROR);
-  }
-  return supabaseAdmin;
+export async function getTeacherFromAuthHeader(request: Request) {
+  const token = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token || !supabaseAdmin) return null;
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error) return null;
+  return data.user ?? null;
 }

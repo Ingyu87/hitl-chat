@@ -61,10 +61,6 @@ export function getInitialQuestionStage(config: SessionConfig): Stage {
   return getStudentQuestionFlow(config)[0]?.stage || "orient";
 }
 
-export function getQuestionIndex(config: SessionConfig, stage: Stage) {
-  return getQuestionFlow(config).findIndex((item) => item.stage === stage);
-}
-
 export function getNextQuestionStage(config: SessionConfig, stage: Stage): Stage {
   const flow = getStudentQuestionFlow(config);
   const index = flow.findIndex((item) => item.stage === stage);

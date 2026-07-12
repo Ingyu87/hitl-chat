@@ -3,8 +3,24 @@ import type { ChatMessage, SessionConfig } from "@/lib/types";
 export const PROMPT_MAX_LENGTH = 400;
 
 const META_LABEL_PATTERN = /^(주제|학생\s*아이디어|필수\s*요소|주의\s*요소|금지\s*요소|프롬프트|제외\s*요소|수정\s*(요청|의견|반영)|revision|request|prompt)\s*[:：]/i;
-const FINAL_APPROVAL_PATTERN = /(이대로\s*확정|최종\s*확정|확정|좋아|괜찮아|완성|ok|yes)/i;
-const PROMPT_REQUEST_PATTERN = /(프롬프트|결과|만들어|작성|보여|알려|완성)/i;
+
+// "좋아", "완성" 같은 단어가 문장 중간에 섞인 수정 요청("하늘을 밝게 하면 좋아질 것 같아")을
+// 최종 확정으로 오인하지 않도록, 명확한 확정 구문 또는 단독 답변만 승인으로 판정한다.
+const FINAL_APPROVAL_PHRASES = /(이대로확정|그대로확정|최종확정|확정할래|확정할게|확정해줘|확정해주세요|확정합니다|확정이요|이대로좋아|이걸로확정|이대로할래|최종본으로확정)/;
+const FINAL_APPROVAL_EXACT = /^(확정|좋아|좋아요|좋습니다|괜찮아|괜찮아요|완성|최종|네|넵|응|그래|ok|okay|yes)[.!?~]*$/i;
+
+// 프롬프트 재생성 요청도 명시적인 표현일 때만 인정한다("바다가 보여요" 같은 답변 제외).
+const PROMPT_REQUEST_PATTERN = /(프롬프트|초안|결과물?)[^\n]{0,10}(만들|생성|작성|보여줘|보여주세요|알려줘|알려주세요|줘|주세요)|^(다시)?(만들어줘|만들어주세요|보여줘|보여주세요)$/;
+
+export function isFinalApproval(input: string): boolean {
+  const normalized = input.replace(/\s/g, "");
+  if (!normalized) return false;
+  return FINAL_APPROVAL_PHRASES.test(normalized) || FINAL_APPROVAL_EXACT.test(normalized.toLowerCase());
+}
+
+export function isPromptRequest(input: string): boolean {
+  return PROMPT_REQUEST_PATTERN.test(input.replace(/\s/g, ""));
+}
 
 export function buildDraftPrompt(config: SessionConfig, history: ChatMessage[]) {
   const answers = getStudentAnswers(history);
@@ -65,7 +81,7 @@ function getStudentAnswers(history: ChatMessage[]) {
     .map((message) => cleanStudentAnswer(message.content))
     .filter(Boolean)
     .filter((answer) => !isWeakAnswer(answer))
-    .filter((answer) => !FINAL_APPROVAL_PATTERN.test(answer.replace(/\s/g, "")))
+    .filter((answer) => !isFinalApproval(answer))
     .filter((answer) => !isBarePromptRequest(answer));
 }
 
@@ -183,7 +199,7 @@ function inferMood(answerText: string) {
 
 function isBarePromptRequest(input: string) {
   const normalized = input.trim().replace(/\s/g, "").toLowerCase();
-  return PROMPT_REQUEST_PATTERN.test(normalized) && normalized.length <= 12;
+  return isPromptRequest(normalized) && normalized.length <= 16;
 }
 
 function isWeakAnswer(input: string) {
