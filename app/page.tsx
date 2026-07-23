@@ -1945,7 +1945,7 @@ function MonitoringView({
                 }}
               >
                 <span>
-                  <strong className="block text-base">{student.name}</strong>
+                  <strong className="block text-base">{maskStudentName(student.name)}</strong>
                   <span className="text-muted">{formatTime(student.lastActiveAt)}</span>
                 </span>
                 <span className="truncate">{student.lessonTopic ?? session.topic}</span>
@@ -1997,7 +1997,7 @@ function StudentDetailModal({ session, student, isAnalyzing, onClose, onAnalyze 
           <div>
             <p className="text-sm font-black text-primary">{student.lessonTopic ?? session.topic}</p>
             <p className="mt-1 text-sm font-bold text-muted">처음부터 진행 {restartRecords.length}회</p>
-            <h2 className="text-2xl font-black text-ink">{student.name} 대화 기록</h2>
+            <h2 className="text-2xl font-black text-ink">{maskStudentName(student.name)} 대화 기록</h2>
           </div>
           <button className="rounded-[8px] p-2 text-muted hover:bg-surface" onClick={onClose} title="닫기">
             <X size={20} />
@@ -2315,6 +2315,14 @@ function splitList(value: string) {
 
 function stageLabel(stage: string) {
   return STAGES.find((item) => item.stage === stage)?.label ?? stage;
+}
+
+/** 교사 화면용 이름 마스킹: 홍길동 → 홍*동, 민준 → 민* */
+function maskStudentName(name: string) {
+  const trimmed = String(name ?? "").trim();
+  if (trimmed.length <= 1) return trimmed;
+  if (trimmed.length === 2) return `${trimmed[0]}*`;
+  return `${trimmed[0]}*${trimmed[trimmed.length - 1]}`;
 }
 
 function alertLabel(alertType: SafetyAlert["alertType"]) {
