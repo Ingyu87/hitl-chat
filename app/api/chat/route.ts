@@ -1,4 +1,5 @@
 import { maybeAssistWithAi } from "@/lib/ai-assist";
+import { countStudentAiUsage } from "@/lib/ai-quota";
 import { callAiJson, getAiProvider, hasAiApiKey } from "@/lib/ai-provider";
 import { getNextFlow } from "@/lib/flow";
 import { isFinalApproval, isPromptRequest } from "@/lib/prompt-builder";
@@ -158,7 +159,8 @@ export async function POST(request: Request) {
     loopCount: context.loopCount
   });
 
-  const aiCallCount = (Array.isArray(studentRow.ai_logs) ? (studentRow.ai_logs as AiAssistLog[]) : []).filter((log) => log?.used).length;
+  const aiLogs = Array.isArray(studentRow.ai_logs) ? (studentRow.ai_logs as AiAssistLog[]) : [];
+  const aiCallCount = countStudentAiUsage(aiLogs);
   const baseText = flow.draftPrompt ?? flow.assistantMessage;
   const ai = await maybeAssistWithAi({
     config: context.config,

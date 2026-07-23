@@ -197,6 +197,37 @@ export async function deleteStudentRow(studentId: string) {
   }
 }
 
+export async function requestStudentAnalysis(session: SessionConfig, student: StudentWorkspace) {
+  if (!supabaseBrowser) {
+    throw new Error("Supabase 연결을 초기화하지 못했습니다.");
+  }
+
+  const token = await getTeacherAccessToken();
+
+  if (!token) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  const response = await fetch("/api/analyze", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ session, student })
+  });
+
+  const result = (await response.json().catch(() => null)) as
+    | { analysis?: StudentWorkspace["analysis"]; error?: string; aiUsed?: boolean }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(result?.error ?? "AI 분석에 실패했습니다.");
+  }
+
+  return result;
+}
+
 export async function deleteProjectRow(projectId: string) {
   if (!supabaseBrowser) return;
   const token = await getTeacherAccessToken();

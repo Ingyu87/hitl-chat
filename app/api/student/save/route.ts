@@ -1,4 +1,3 @@
-import { AI_ASSIST_LIMIT } from "@/lib/defaults";
 import { getSupabaseAdminConfigError, supabaseAdmin } from "@/lib/supabase-admin";
 import type { AiAssistLog, ChatMessage, PromptRecord, SafetyAlert, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
@@ -139,7 +138,6 @@ function validateStudentPayload(student: StudentWorkspace, allowedStages: Set<st
   if (!Array.isArray(student.prompts) || student.prompts.length > MAX_PROMPTS) return { ok: false, error: "프롬프트 기록이 너무 많습니다." };
   if (!Array.isArray(student.safetyAlerts) || student.safetyAlerts.length > MAX_SAFETY_ALERTS) return { ok: false, error: "경고 기록이 너무 많습니다." };
   if (!Array.isArray(student.aiLogs) || student.aiLogs.length > MAX_AI_LOGS) return { ok: false, error: "AI 사용 기록이 너무 많습니다." };
-  if (student.aiLogs.filter((log) => log?.used).length > AI_ASSIST_LIMIT) return { ok: false, error: "학생당 AI 보조 한도를 초과했습니다." };
 
   if (!student.messages.every((message) => isValidMessage(message, allowedStages))) return { ok: false, error: "대화 기록 형식이 올바르지 않습니다." };
   if (!student.prompts.every(isValidPrompt)) return { ok: false, error: "프롬프트 기록 형식이 올바르지 않습니다." };

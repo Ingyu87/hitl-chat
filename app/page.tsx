@@ -23,12 +23,13 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import { countStudentAiUsage } from "@/lib/ai-quota";
 import { AI_ASSIST_LIMIT, DEFAULT_SESSION, STAGES } from "@/lib/defaults";
 import { getInitialAssistantMessage } from "@/lib/flow";
 import { limitPromptLength } from "@/lib/prompt-builder";
 import { buildDefaultQuestionFlow, getChoicesForStage, getInitialQuestionStage, getQuestionFlow, getStudentQuestionFlow, injectTopic, MAX_QUESTION_COUNT } from "@/lib/question-flow";
 import { buildRestartMessages, getActiveMessages, getRestartRecords } from "@/lib/restart-marker";
-import { clearStudentRowsForTeacher, createEmptySession, deleteProjectRow, deleteStudentRow, getCurrentTeacher, getTeacherAccessToken, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
+import { clearStudentRowsForTeacher, createEmptySession, deleteProjectRow, deleteStudentRow, getCurrentTeacher, getTeacherAccessToken, loadProjectData, loadStudentsForSession, loadStudentsForTeacher, loadTeacherData, loadTeacherProjects, requestStudentAnalysis, saveTeacherSession, signInTeacher, signOutTeacher, signUpTeacher } from "@/lib/supabase-db";
 import type { AiAssistLog, ChatMessage, PromptRecord, QuestionChoice, SafetyAlert, SessionConfig, Stage, StudentAnalysis, StudentWorkspace } from "@/lib/types";
 
 type View = "home" | "student-login" | "student-chat" | "teacher-auth" | "teacher-settings" | "monitoring";
@@ -1024,7 +1025,7 @@ function StudentChatView({ session, student, saveWarning, onChange, onReset }: {
   const isFinalized = Boolean(finalPrompt);
   const currentChoices = getChoicesForStage(session, student.currentStage);
   const activeMessages = getActiveMessages(student.messages);
-  const aiUsedCount = student.aiLogs.filter((log) => log.used).length;
+  const aiUsedCount = countStudentAiUsage(student.aiLogs);
   const latestActiveSafetyAlert = activeSafetyAlerts.at(-1);
   const aiLimit = Math.max(0, session.aiCallsPerStudentLimit ?? 0);
   const aiRemaining = Math.max(0, aiLimit - aiUsedCount);
@@ -1843,19 +1844,14 @@ function MonitoringView({
   async function analyzeStudent(student: StudentWorkspace) {
     setIsAnalyzing(true);
     try {
-      const token = await getTeacherAccessToken();
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ session, student })
-      });
-      const result = await response.json();
-      if (result.analysis) {
+      const result = await requestStudentAnalysis(session, student);
+      if (result?.analysis) {
         onUpdateStudent({ ...student, analysis: result.analysis as StudentAnalysis });
       } else {
         onUpdateStudent({ ...student, analysis: buildLocalAnalysisFallback(student) });
       }
-    } catch {
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "AI 분석에 실패했습니다.");
       onUpdateStudent({ ...student, analysis: buildLocalAnalysisFallback(student) });
     } finally {
       setIsAnalyzing(false);
